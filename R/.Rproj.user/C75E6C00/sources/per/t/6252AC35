@@ -1,0 +1,28 @@
+{
+    "id": "6252AC35",
+    "path": "C:/MyStuff/ToleranceEvo_Wenxi/Code/R/ToleranceEvo_main.Rmd",
+    "project_path": "ToleranceEvo_main.Rmd",
+    "type": "r_markdown",
+    "hash": "3967719794",
+    "contents": "",
+    "dirty": false,
+    "created": 1755862439054.0,
+    "source_on_save": false,
+    "relative_order": 1,
+    "properties": {
+        "tempName": "Untitled1",
+        "source_window_id": "",
+        "Source": "Source",
+        "cursorPosition": "87,58",
+        "scrollLine": "81",
+        "last_setup_crc32": "b9c7016bbb338d19"
+    },
+    "folds": "13|6|22|0|\n25|6|34|0|\n38|6|50|0|\n54|6|75|0|\n",
+    "lastKnownWriteTime": 1756132692,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1756132692856,
+    "read_only": false,
+    "read_only_alternatives": []
+}

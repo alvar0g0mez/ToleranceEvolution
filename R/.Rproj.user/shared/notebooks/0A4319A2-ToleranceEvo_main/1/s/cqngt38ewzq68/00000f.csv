@@ -1,0 +1,8 @@
+"0","working_from <- ""charite"""
+"0",""
+"0","if (working_from == ""home"") {"
+"0","  base_dir = ""/home/alvaro/MyStuff/"""
+"0","} else"
+"0","  if (working_from == ""charite"") {"
+"0","    base_dir = ""C:/MyStuff/"""
+"0","  }"

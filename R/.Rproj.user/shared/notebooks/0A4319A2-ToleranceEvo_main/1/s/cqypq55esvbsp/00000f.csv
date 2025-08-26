@@ -1,0 +1,10 @@
+"0","# Run summarization
+protein_mat <- protein_summarize(raw_data = raw_prec_data,
+                                 protein_ids = precursor_protein_correspondence$Protein.Ids,
+                                 method = ""limpa"")
+"
+"2","Estimating hyperparameters ...
+"
+"2","Error in proteinResVarFromCompletePeptideData(yComplete, protein.id = protein.id,  : 
+  NAs not allowed in protein.id
+"
