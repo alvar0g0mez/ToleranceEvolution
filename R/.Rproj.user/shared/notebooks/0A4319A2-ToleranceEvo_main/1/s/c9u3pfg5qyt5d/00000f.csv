@@ -50,3 +50,4 @@ Attaching package: ‘helperfunctions’
 "
 "0","library(preprocessCore)"
 "0","library(proDA)"
+"0","library(stringr)"
