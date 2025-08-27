@@ -25,7 +25,7 @@ library(stringr)
 
 Set up
 ```{r}
-working_from <- "charite"
+working_from <- "home"
 
 if (working_from == "home") {
   base_dir = "/home/alvaro/MyStuff/"
@@ -57,9 +57,10 @@ uniprot_db <- as.data.frame(fread(paste(base_dir, "tRNA_KOs/Data/databases/unipr
 
 # 1. Differential expression analysis
 Performed with limpa. Filtering and pre-processing at the precursor level was done in the cluster, here I start from the processed (filtered, normalized, drift corrected, MAR-only imputed) data at precursor level in wide format (precursors in rows, samples in columns), summarize to protein level and perform DE analysis, both with limpa.
+
+## 1.1. Peptide to protein summarization
 ```{r}
-# Prepare protein ID vector matching the precursor order in the rows of the raw data
-## Set the order based on that of the rows of the precursor raw data
+# Prepare protein ID vector matching the precursor order in the rows of the raw data, setting the order based on that of the rows of the precursor raw data
 precursor_protein_correspondence <- precursor_protein_correspondence %>%
   dplyr::filter(Precursor.Id %in% rownames(raw_prec_data))
 precursor_protein_correspondence <- precursor_protein_correspondence[match(rownames(raw_prec_data), precursor_protein_correspondence$Precursor.Id),]
@@ -69,7 +70,7 @@ protein_mat <- protein_summarize(raw_data = raw_prec_data,
                                  protein_ids = precursor_protein_correspondence$Protein.Ids,
                                  method = "limpa")
 
-# Remove proteins which are present in less than 65% of the samples per strain
+# Remove proteins which are present in less than 65% of the samples per strain - NOT NECESSARY RIGHT NOW SINCE I'M USING FULLY IMPUTED DATASET
 #protein_mat <- as.data.frame(protein_mat)
 #protein_mat$Precursor.Id <- rownames(protein_mat)
 #protein_mat <- pivot_longer(protein_mat,                                                  # Switch to longer format for filtering
@@ -85,32 +86,68 @@ protein_mat <- protein_summarize(raw_data = raw_prec_data,
 #sum(is.na(protein_mat))
 #sum(is.na(protein_mat))/(ncol(protein_mat)*nrow(protein_mat))
 
-# Run differential expression analysis
-## I am not sure how to do this! Should I check DE for all strains w.r.t. to a single baseline one? Or should I do it separately for each culture method (pellet, liquid, liquid+fluconazole)??? For now I am going to run it once for all strains with C0L (lab strain, passage 0, liquid media) as a reference and see what happens
+# Save protein level dataset
+saveRDS(protein_mat, paste(base_dir, "ToleranceEvo_Wenxi/Data/Preprocessing_steps/protein_summarized_fully_imputed.rds", sep = ""))
+```
+
+## 1.2. Differential expression analysis
+### 1.2.1. Separately for each treatment
+I run into the issue that lab strain at passage 0 in fluconazole was removed during pre-processing. I think that's possibly expected, since it's a lab strain and it's had no time to adapt, fluconazole will kill it, hence it's understandable that the proteome we detect in it is quite messy. Should check this with Wenxi though. 
+```{r}
+# Divide the dataset into 3 based on culture type (pellet, liquid, liquid+fluconazole) and perform DE analysis separate for each, using lab strain at passage 0 as reference
+treatments <- unique(metadata$Treatment)[!(unique(metadata$Treatment) == "QC")]
+da_list <- list()
+responsiveness_list <- list()
+
+for (treatment in treatments) {
+  # Grab the strains with this treatment
+  samples_to_select <- metadata$Sample.Name[metadata$Treatment == treatment]
+  temp_protein_mat <- protein_mat$y.protein$E[, colnames(protein_mat$y.protein$E) %in% samples_to_select]
+  reference_strain <- unique(metadata$Strain.Name[metadata$Treatment == treatment &
+                                             metadata$Passage == 0 &
+                                             metadata$Strain.Type == "Lab strain"])[1]
+  
+  # Run differential expression analysis
+  de_analysis_results <- de_analysis(raw_data = temp_protein_mat,
+                                     metadata = metadata,
+                                     method = "limma",
+                                     strain_name_column = "Strain.Name", 
+                                     sample_name_column = "Sample.Name", 
+                                     reference_strain = reference_strain,
+                                     N = 10,
+                                     lfc_threshold = 1,
+                                     alpha = 0.05)
+  da <- de_analysis_results$DE_df
+  da_list[[treatment]] <- da
+  
+  # Get responsiveness df
+  resp <- create_responsiveness_df(da,
+                                   lfc_threshold = 1,
+                                   alpha = 0.05)
+  responsiveness_list[[treatment]] <- resp
+}
+
+
+
+```
+
+### 1.2.2. All strains together, using C0L as the reference
+Decided to use this one because it's the lab strain, at passage 0, and in liquid because it's supposed to have had a bit more time to grow than the solid one
+```{r}
 de_analysis_results <- de_analysis(raw_data = protein_mat$y.protein,
                                    metadata = metadata,
                                    method = "limpa",
                                    strain_name_column = "Strain.Name", 
                                    sample_name_column = "Sample.Name", 
-                                   reference_strain = "C0L")
+                                   reference_strain = "C0L",
+                                   N = 10,
+                                   lfc_threshold = 1,
+                                   alpha = 0.05)
 da <- de_analysis_results$DE_df
-```
 
-
-```{r}
-sum(da$diffexpressed_adjusted != "Not_significant")
-
-lfc_threshold <- 0.5
-alpha <- 0.05
-
-responsiveness <- da %>%
-  group_by(Strain.Name) %>%
-  summarise(nDEP = sum(abs(logFC) >= lfc_threshold & adj.P.Val <= alpha, na.rm = T),
-            Up_regulated_adjusted = sum(abs(logFC) >= lfc_threshold & adj.P.Val <= alpha & diffexpressed_adjusted == "Up_regulated", na.rm = T),
-            Down_regulated_adjusted = sum(abs(logFC) >= lfc_threshold & adj.P.Val <= alpha & diffexpressed_adjusted == "Down_regulated", na.rm = T),
-            Up_regulated_non_adjusted = sum(abs(logFC) >= lfc_threshold & P.Value <= alpha & diffexpressed_non_adjusted == "Up_regulated", na.rm = T),
-            Down_regulated_non_adjusted = sum(abs(logFC) >= lfc_threshold & P.Value <= alpha & diffexpressed_non_adjusted == "Down_regulated", na.rm = T),
-            Replicate_num = mean(Replicate_num))
+resp <- create_responsiveness_df(da,
+                                 lfc_threshold = 1,
+                                 alpha = 0.05)
 ```
 
 
@@ -129,6 +166,7 @@ lfc_threshold = 1
 alpha = 0.05
 N = 10
 ```
+
 
 
 
