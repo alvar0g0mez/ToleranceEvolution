@@ -47,7 +47,6 @@ Load data
 ```{r}
 # Precursor data wide format
 raw_prec_data <- as.matrix(fread(paste(base_dir, "ToleranceEvo_Wenxi/Data/Preprocessing_steps/report_wide_filtered_norm_fully_imputed_drift_corrected_log2.csv", sep="")), rownames = 1)
-hist(raw_prec_data)
 
 # Metadata
 metadata <- as.data.frame(fread(paste(base_dir, "ToleranceEvo_Wenxi/Data/metadata/metadata_processed.txt", sep="")))
@@ -148,6 +147,7 @@ I run into the issue that lab strain at passage 0 in fluconazole was removed dur
 ### 1.2.2. All strains together, using C0L as the reference
 Decided to use this one because it's the lab strain, at passage 0, and in liquid because it's supposed to have had a bit more time to grow than the solid one
 ```{r}
+# Main DE analysis - produces the da dataframe
 de_analysis_results_vs_C0L <- de_analysis(raw_data = summarization_results$y.protein,
                                    metadata = metadata,
                                    method = "limpa",
@@ -159,22 +159,10 @@ de_analysis_results_vs_C0L <- de_analysis(raw_data = summarization_results$y.pro
                                    alpha = 0.05)
 da_vs_C0L <- de_analysis_results_vs_C0L$DE_df
 
-#resp <- create_responsiveness_df(da,                       # Didn't push this function from home :(
-#                                 lfc_threshold = 1,
-#                                 alpha = 0.05)
-
-# This code is temporary until I get that function from home PC, then I go back to the lines above
-alpha <- 0.05
-lfc_threshold <- 1
-resp_vs_C0L <- da_vs_C0L %>%
-  group_by(Strain.Name) %>%
-  summarise(nDEP = sum(abs(logFC) >= lfc_threshold & adj.P.Val <= alpha, na.rm = T),
-            Up_regulated_adjusted = sum(abs(logFC) >= lfc_threshold & adj.P.Val <= alpha & diffexpressed_adjusted == "Up_regulated", na.rm = T),
-            Down_regulated_adjusted = sum(abs(logFC) >= lfc_threshold & adj.P.Val <= alpha & diffexpressed_adjusted == "Down_regulated", na.rm = T),
-            Up_regulated_non_adjusted = sum(abs(logFC) >= lfc_threshold & P.Value <= alpha & diffexpressed_non_adjusted == "Up_regulated", na.rm = T),
-            Down_regulated_non_adjusted = sum(abs(logFC) >= lfc_threshold & P.Value <= alpha & diffexpressed_non_adjusted == "Down_regulated", na.rm = T),
-            Replicate_num = mean(Replicate_num))
-# Everything below this should work fine as well when I go back to that function
+# From the da dataframe, create responsiveness dataframe, summarize DEPs per strain
+resp_vs_C0L <- create_responsiveness_df(da = da_vs_C0L,
+                                        alpha = 0.05,
+                                        lfc_threshold = 1)
 
 # Add other informative columns to resp df
 temp <- metadata %>%
@@ -186,6 +174,7 @@ resp_vs_C0L <- left_join(resp_vs_C0L, temp, by = "Strain.Name")
 ### 1.2.3. All strains together, using C0P as the reference
 When using C0L as reference, I saw DEPs only in pellet and liquid+fluconazole, pointing towards the fact that it is the treatment that drives the proteome, not the strain nor the passage
 ```{r}
+# Main DE analysis - produces the da dataframe
 de_analysis_results_vs_C0P <- de_analysis(raw_data = summarization_results$y.protein,
                                    metadata = metadata,
                                    method = "limpa",
@@ -197,22 +186,10 @@ de_analysis_results_vs_C0P <- de_analysis(raw_data = summarization_results$y.pro
                                    alpha = 0.05)
 da_vs_C0P <- de_analysis_results_vs_C0P$DE_df
 
-#resp <- create_responsiveness_df(da,                       # Didn't push this function from home :(
-#                                 lfc_threshold = 1,
-#                                 alpha = 0.05)
-
-# This code is temporary until I get that function from home PC, then I go back to the lines above
-alpha <- 0.05
-lfc_threshold <- 1
-resp_vs_C0P <- da_vs_C0P %>%
-  group_by(Strain.Name) %>%
-  summarise(nDEP = sum(abs(logFC) >= lfc_threshold & adj.P.Val <= alpha, na.rm = T),
-            Up_regulated_adjusted = sum(abs(logFC) >= lfc_threshold & adj.P.Val <= alpha & diffexpressed_adjusted == "Up_regulated", na.rm = T),
-            Down_regulated_adjusted = sum(abs(logFC) >= lfc_threshold & adj.P.Val <= alpha & diffexpressed_adjusted == "Down_regulated", na.rm = T),
-            Up_regulated_non_adjusted = sum(abs(logFC) >= lfc_threshold & P.Value <= alpha & diffexpressed_non_adjusted == "Up_regulated", na.rm = T),
-            Down_regulated_non_adjusted = sum(abs(logFC) >= lfc_threshold & P.Value <= alpha & diffexpressed_non_adjusted == "Down_regulated", na.rm = T),
-            Replicate_num = mean(Replicate_num))
-# Everything below this should work fine as well when I go back to that function
+# From the da dataframe, create responsiveness dataframe, summarize DEPs per strain
+resp_vs_C0P <- create_responsiveness_df(da = da_vs_C0P,
+                                        alpha = 0.05,
+                                        lfc_threshold = 1)
 
 # Add other informative columns to resp df
 temp <- metadata %>%
@@ -380,8 +357,8 @@ trna_ko_high_var <- protein_mat[rownames(protein_mat) %in% most_variable_protein
 ```
 
 
-Heatmaps
-- Heatmap with Z-score based on median per protein
+## 1.5. Heatmaps
+### 1.5.1. Heatmap with Z-score based on median per protein - for all samples
 So this is basically focusing on the variability of each protein across all the samples - removing the basal "effect" of that protein?
 ```{r}
 create_heatmap(protein_mat = protein_mat,
@@ -393,7 +370,9 @@ create_heatmap(protein_mat = protein_mat,
                metadata_column_for_annotation = "Strain.Type",
                metadata_column_for_sample_name = "Sample.Name",
                location_to_save = paste(base_dir, "ToleranceEvo_Wenxi/Output/Plots/heatmaps/", sep=""),
-               save_as = "pdf")
+               save_as = "png",
+               plot_name = "default",
+               heatmap_title = "All samples")
 
 create_heatmap(protein_mat = protein_mat,
                annotation = T,
@@ -404,7 +383,9 @@ create_heatmap(protein_mat = protein_mat,
                metadata_column_for_annotation = "Treatment",
                metadata_column_for_sample_name = "Sample.Name",
                location_to_save = paste(base_dir, "ToleranceEvo_Wenxi/Output/Plots/heatmaps/", sep=""),
-               save_as = "pdf")
+               save_as = "png",
+               plot_name = "default",
+               heatmap_title = "All samples")
 
 create_heatmap(protein_mat = protein_mat,
                annotation = T,
@@ -415,49 +396,93 @@ create_heatmap(protein_mat = protein_mat,
                metadata_column_for_annotation = "Passage",
                metadata_column_for_sample_name = "Sample.Name",
                location_to_save = paste(base_dir, "ToleranceEvo_Wenxi/Output/Plots/heatmaps/", sep=""),
-               save_as = "pdf")
+               save_as = "png",
+               plot_name = "default",
+               heatmap_title = "All samples")
 ```
 
-- Heatmap with per-gene log2 FC across strains (compared to median of gene across all strains)
-Here I'm normalizing the values for each protein by dividing them by the median abundance of that protein
+### 1.5.2. Separate heatmaps for each treatment group
+Since in the heatmap for all samples together, these cluster only around treatment group, I want to see, within each treatment group, do the samples cluster based on the other parameters?
 ```{r}
-create_heatmap(protein_mat = protein_mat,
-               annotation = T,
-               metadata = metadata,
-               heatmap_type = "log2FC",
-               z_score_type = "standard",
-               color_palette = "viridis",
-               metadata_column_for_annotation = "Strain.Type",
-               metadata_column_for_sample_name = "Sample.Name",
-               location_to_save = paste(base_dir, "ToleranceEvo_Wenxi/Output/Plots/heatmaps/", sep=""),
-               save_as = "pdf")
+treatments <- unique(metadata$Treatment)[!(unique(metadata$Treatment) %in% c("QC"))]
 
-create_heatmap(protein_mat = protein_mat,
-               annotation = T,
-               metadata = metadata,
-               heatmap_type = "log2FC",
-               z_score_type = "standard",
-               color_palette = "viridis",
-               metadata_column_for_annotation = "Treatment",
-               metadata_column_for_sample_name = "Sample.Name",
-               location_to_save = paste(base_dir, "ToleranceEvo_Wenxi/Output/Plots/heatmaps/", sep=""),
-               save_as = "pdf")
+for (treatment in treatments) {
+  # Subset the protein matrix to contain only the samples in this treatment group
+  samples_to_keep <- metadata$Sample.Name[metadata$Treatment == treatment]
+  mat <- protein_mat[, colnames(protein_mat) %in% samples_to_keep]
+  
+  # Subset the metadata
+  meta <- metadata[metadata$Sample.Name %in% samples_to_keep,]
+  
+  # Produce the heatmap - by Strain.Type
+  create_heatmap(protein_mat = mat,
+                 annotation = T,
+                 metadata = meta,
+                 heatmap_type = "z-score",
+                 z_score_type = "standard",
+                 color_palette = "viridis",
+                 metadata_column_for_annotation = "Strain.Type",
+                 metadata_column_for_sample_name = "Sample.Name",
+                 location_to_save = paste(base_dir, "ToleranceEvo_Wenxi/Output/Plots/heatmaps/", sep=""),
+                 save_as = "png",
+                 plot_name = "custom",
+                 custom_plot_name = paste("heatmap_z_score_standard_only_", treatment, "_annotated_by_Strain.Type", sep=""),
+                 heatmap_title = paste("Treatment group", treatment, sep=" "))
+  
+  # Produce the heatmap by passage
+  create_heatmap(protein_mat = mat,
+                 annotation = T,
+                 metadata = meta,
+                 heatmap_type = "z-score",
+                 z_score_type = "standard",
+                 color_palette = "viridis",
+                 metadata_column_for_annotation = "Passage",
+                 metadata_column_for_sample_name = "Sample.Name",
+                 location_to_save = paste(base_dir, "ToleranceEvo_Wenxi/Output/Plots/heatmaps/", sep=""),
+                 save_as = "png",
+                 plot_name = "custom",
+                 custom_plot_name = paste("heatmap_z_score_standard_only_", treatment, "_annotated_by_Passage", sep=""),
+                 heatmap_title = paste("Treatment group", treatment, sep=" "))
+}
+```
 
-create_heatmap(protein_mat = protein_mat,
-               annotation = T,
-               metadata = metadata,
-               heatmap_type = "log2FC",
-               z_score_type = "standard",
-               color_palette = "viridis",
-               metadata_column_for_annotation = "Passage",
-               metadata_column_for_sample_name = "Sample.Name",
-               location_to_save = paste(base_dir, "ToleranceEvo_Wenxi/Output/Plots/heatmaps/", sep=""),
-               save_as = "pdf")
+### 1.5.3. Let me actually separate this by Strain.Type_Passage
+```{r}
+treatments <- unique(metadata$Treatment)[!(unique(metadata$Treatment) %in% c("QC"))]
+
+for (treatment in treatments) {
+  # Subset the protein matrix to contain only the samples in this treatment group
+  samples_to_keep <- metadata$Sample.Name[metadata$Treatment == treatment]
+  mat <- protein_mat[, colnames(protein_mat) %in% samples_to_keep]
+  
+  # Subset the metadata
+  meta <- metadata[metadata$Sample.Name %in% samples_to_keep,]
+  
+  # Produce the heatmap - by Strain.Type
+  create_heatmap(protein_mat = mat,
+                 annotation = T,
+                 annotation_type = "double",
+                 metadata = meta,
+                 heatmap_type = "z-score",
+                 z_score_type = "standard",
+                 color_palette = "viridis",
+                 color_palette_2 = "magma",
+                 metadata_column_for_annotation = "Strain.Type",
+                 metadata_column_for_annotation_2 = "Passage",
+                 metadata_column_for_sample_name = "Sample.Name",
+                 location_to_save = paste(base_dir, "ToleranceEvo_Wenxi/Output/Plots/heatmaps/", sep=""),
+                 save_as = "png",
+                 plot_name = "custom",
+                 custom_plot_name = paste("heatmap_z_score_standard_only_", treatment, "_annotated_by_Strain.Type_Passage", sep=""),
+                 heatmap_title = paste("Treatment group", treatment, sep=" "))
+}
 ```
 
 
 
-## 1.5. PCA
+
+
+## 1.6. PCA
 I make 3 different ones, in each of them coloring by a different covariate
 ```{r}
 do_pca(protein_mat,
@@ -465,21 +490,31 @@ do_pca(protein_mat,
        metadata_column_for_annotation = "Strain.Type",
        metadata_column_for_sample_name = "Sample.Name",
        location_to_save = paste(base_dir, "ToleranceEvo_Wenxi/Output/Plots/PCA/", sep=""),
-       save_as = "pdf")
+       save_as = "png")
 
 do_pca(protein_mat,
        metadata,
        metadata_column_for_annotation = "Passage",
        metadata_column_for_sample_name = "Sample.Name",
        location_to_save = paste(base_dir, "ToleranceEvo_Wenxi/Output/Plots/PCA/", sep=""),
-       save_as = "pdf")
+       save_as = "png")
 
 do_pca(protein_mat,
        metadata,
        metadata_column_for_annotation = "Treatment",
        metadata_column_for_sample_name = "Sample.Name",
        location_to_save = paste(base_dir, "ToleranceEvo_Wenxi/Output/Plots/PCA/", sep=""),
-       save_as = "pdf")
+       save_as = "png")
+
+metadata <- metadata %>%
+  dplyr::mutate(Treatment_Passage = paste(Treatment, Passage, sep="_"))
+
+do_pca(protein_mat, 
+       metadata,
+       metadata_column_for_annotation = "Treatment_Passage",
+       metadata_column_for_sample_name = "Sample.Name",
+       location_to_save = paste(base_dir, "ToleranceEvo_Wenxi/Output/Plots/PCA/", sep=""),
+       save_as = "png")
 ```
 
 
