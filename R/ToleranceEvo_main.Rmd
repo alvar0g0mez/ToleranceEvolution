@@ -40,6 +40,13 @@ if (working_from == "home") {
   if (working_from == "charite") {
     base_dir = "C:/MyStuff/"
   }
+
+save_files_to <- "s"
+if (save_files_to == "s") {
+  location_to_save <- "S:/AG/AG-CF-HTMS/AG-Ralser-Share/30-0156_WenxiQi-ToleranceEvo/05_DataAnalysis/11_Analysis_Alvaro/"
+} else if (save_files_to == "local") {
+  location_to_save <- paste(base_dir, "ToleranceEvo_Wenxi/", sep="")
+}
 ```
 
 
@@ -331,7 +338,7 @@ plot(tree, cex = 0.3)
 hcd <- as.dendrogram(tree)
 
 # Open a PDF for plotting; units are inches by default
-pdf(paste(base_dir, "ToleranceEvo_Wenxi/Output/Plots/dendrograms/dist_method_",  distance_method, "_clust_method_", clustering_method, ".pdf", sep=""), width=40, height=15)
+pdf(paste(location_to_save, "Output/Plots/dendrograms/dist_method_",  distance_method, "_clust_method_", clustering_method, ".pdf", sep=""), width=40, height=15)
 
 # Plot the tree into the PDF
 plot(tree, cex = 0.3)
@@ -342,8 +349,8 @@ dev.off()
 # Rotate PDF
 rotate_pdf(
   page_rotation = 90,
-  input_filepath = paste(base_dir, "ToleranceEvo_Wenxi/Output/Plots/dendrograms/dist_method_",  distance_method, "_clust_method_", clustering_method, ".pdf", sep=""),
-  output_filepath = paste(base_dir, "ToleranceEvo_Wenxi/Output/Plots/dendrograms/dist_method_",  distance_method, "_clust_method_", clustering_method, ".pdf", sep=""),
+  input_filepath = paste(location_to_save, "Output/Plots/dendrograms/dist_method_",  distance_method, "_clust_method_", clustering_method, ".pdf", sep=""),
+  output_filepath = paste(location_to_save, "Output/Plots/dendrograms/dist_method_",  distance_method, "_clust_method_", clustering_method, ".pdf", sep=""),
   overwrite = TRUE
 )
 ```
@@ -361,44 +368,24 @@ trna_ko_high_var <- protein_mat[rownames(protein_mat) %in% most_variable_protein
 ### 1.5.1. Heatmap with Z-score based on median per protein - for all samples
 So this is basically focusing on the variability of each protein across all the samples - removing the basal "effect" of that protein?
 ```{r}
-create_heatmap(protein_mat = protein_mat,
-               annotation = T,
-               metadata = metadata,
-               heatmap_type = "z-score",
-               z_score_type = "standard",
-               color_palette = "viridis",
-               metadata_column_for_annotation = "Strain.Type",
-               metadata_column_for_sample_name = "Sample.Name",
-               location_to_save = paste(base_dir, "ToleranceEvo_Wenxi/Output/Plots/heatmaps/", sep=""),
-               save_as = "png",
-               plot_name = "default",
-               heatmap_title = "All samples")
+classifications <- c("Strain.Type", "Treatment", "Passage")
 
-create_heatmap(protein_mat = protein_mat,
+for (classification in classifications) {
+  create_heatmap(protein_mat = protein_mat,
                annotation = T,
                metadata = metadata,
+               annotation_type = "single",
                heatmap_type = "z-score",
                z_score_type = "standard",
                color_palette = "viridis",
-               metadata_column_for_annotation = "Treatment",
+               metadata_column_for_annotation = classification,
                metadata_column_for_sample_name = "Sample.Name",
-               location_to_save = paste(base_dir, "ToleranceEvo_Wenxi/Output/Plots/heatmaps/", sep=""),
+               location_to_save = paste(location_to_save, "Output/Plots/heatmaps/", sep=""),
                save_as = "png",
                plot_name = "default",
-               heatmap_title = "All samples")
-
-create_heatmap(protein_mat = protein_mat,
-               annotation = T,
-               metadata = metadata,
-               heatmap_type = "z-score",
-               z_score_type = "standard",
-               color_palette = "viridis",
-               metadata_column_for_annotation = "Passage",
-               metadata_column_for_sample_name = "Sample.Name",
-               location_to_save = paste(base_dir, "ToleranceEvo_Wenxi/Output/Plots/heatmaps/", sep=""),
-               save_as = "png",
-               plot_name = "default",
-               heatmap_title = "All samples")
+               heatmap_title = "All samples",
+               sample_name_size = 4)
+}
 ```
 
 ### 1.5.2. Separate heatmaps for each treatment group
@@ -423,7 +410,7 @@ for (treatment in treatments) {
                  color_palette = "viridis",
                  metadata_column_for_annotation = "Strain.Type",
                  metadata_column_for_sample_name = "Sample.Name",
-                 location_to_save = paste(base_dir, "ToleranceEvo_Wenxi/Output/Plots/heatmaps/", sep=""),
+                 location_to_save = paste(location_to_save, "Output/Plots/heatmaps/", sep=""),
                  save_as = "png",
                  plot_name = "custom",
                  custom_plot_name = paste("heatmap_z_score_standard_only_", treatment, "_annotated_by_Strain.Type", sep=""),
@@ -438,7 +425,7 @@ for (treatment in treatments) {
                  color_palette = "viridis",
                  metadata_column_for_annotation = "Passage",
                  metadata_column_for_sample_name = "Sample.Name",
-                 location_to_save = paste(base_dir, "ToleranceEvo_Wenxi/Output/Plots/heatmaps/", sep=""),
+                 location_to_save = paste(location_to_save, "Output/Plots/heatmaps/", sep=""),
                  save_as = "png",
                  plot_name = "custom",
                  custom_plot_name = paste("heatmap_z_score_standard_only_", treatment, "_annotated_by_Passage", sep=""),
@@ -470,11 +457,12 @@ for (treatment in treatments) {
                  metadata_column_for_annotation = "Strain.Type",
                  metadata_column_for_annotation_2 = "Passage",
                  metadata_column_for_sample_name = "Sample.Name",
-                 location_to_save = paste(base_dir, "ToleranceEvo_Wenxi/Output/Plots/heatmaps/", sep=""),
+                 location_to_save = paste(location_to_save, "Output/Plots/heatmaps/", sep=""),
                  save_as = "png",
                  plot_name = "custom",
                  custom_plot_name = paste("heatmap_z_score_standard_only_", treatment, "_annotated_by_Strain.Type_Passage", sep=""),
-                 heatmap_title = paste("Treatment group", treatment, sep=" "))
+                 heatmap_title = paste("Treatment group:", treatment, sep=" "),
+                 sample_name_size = 8)
 }
 ```
 
