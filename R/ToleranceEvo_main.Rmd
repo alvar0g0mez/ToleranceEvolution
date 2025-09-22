@@ -67,6 +67,27 @@ uniprot_db <- as.data.frame(fread(paste(base_dir, "tRNA_KOs/Data/databases/unipr
 
 
 
+# 0. Some QC plots of the fully processed precursor-level data before anything else
+```{r}
+# Switch to long format
+temp <- as.data.frame(raw_prec_data)
+temp$Precursor.Id <- rownames(temp)
+metadata_temp <- metadata %>%
+  dplyr::select(Sample.Name, Injection)
+prec_data_long <- temp %>%
+  pivot_longer(cols = -Precursor.Id, 
+               names_to = "Sample.Name",
+               values_to = "Precursor.Normalized") %>%
+  left_join(metadata_temp, by = "Sample.Name")
+
+# Boxplot for precursor intensities along injection date
+ggplot(data = prec_data_long, aes(x = Injection, y = Precursor.Normalized, group = Injection))+
+  geom_boxplot() +
+  theme_light()
+```
+
+
+
 
 # 1. Differential expression analysis
 Performed with limpa. Filtering and pre-processing at the precursor level was done in the cluster, here I start from the processed (filtered, normalized, drift corrected, MAR-only imputed) data at precursor level in wide format (precursors in rows, samples in columns), summarize to protein level and perform DE analysis, both with limpa.
@@ -278,6 +299,13 @@ ggplot(data = resp_vs_C0P, aes(x = Treatment, y = nDEP, group = Treatment, fill 
 
 
 ## 1.4. Clustering analysis
+Load protein-level data so I don't have to run the code above every time
+```{r}
+summarization_results <- readRDS(paste(base_dir, "ToleranceEvo_Wenxi/Data/Preprocessing_steps/protein_summarized_fully_imputed.rds", sep = ""))
+protein_mat <- summarization_results$y.protein$E
+```
+
+
 Perform hierarchical clustering
 ```{r}
 # Elbow method - try to figure out what number of clusters is appropriate 
