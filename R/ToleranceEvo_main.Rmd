@@ -18,8 +18,6 @@ library(ggplot2)
 library(data.table)
 library(limpa)
 library(helperfunctions)
-library(preprocessCore)
-library(proDA)
 library(stringr)
 library(glue)
 library(factoextra)         # From here they are all for the heatmap/clustering section
@@ -32,7 +30,7 @@ library(viridis)
 
 Set up
 ```{r}
-working_from <- "charite"
+working_from <- "home"
 
 if (working_from == "home") {
   base_dir = "/home/alvaro/MyStuff/"
@@ -128,7 +126,6 @@ protein_mat <- summarization_results$y.protein$E
 # Save protein level dataset
 saveRDS(summarization_results, paste(base_dir, "ToleranceEvo_Wenxi/Data/Preprocessing_steps/protein_summarized_fully_imputed.rds", sep = ""))
 ```
-
 
 
 ## 1.2. Differential expression analysis
@@ -227,7 +224,6 @@ resp_vs_C0P <- left_join(resp_vs_C0P, temp, by = "Strain.Name")
 ```
 
 
-
 ## 1.3. Boxplots for DE
 ### 1.3.1. DE vs. C0L
 ```{r}
@@ -296,15 +292,12 @@ ggplot(data = resp_vs_C0P, aes(x = Treatment, y = nDEP, group = Treatment, fill 
 ```
 
 
-
-
 ## 1.4. Clustering analysis
 Load protein-level data so I don't have to run the code above every time
 ```{r}
 summarization_results <- readRDS(paste(base_dir, "ToleranceEvo_Wenxi/Data/Preprocessing_steps/protein_summarized_fully_imputed.rds", sep = ""))
 protein_mat <- summarization_results$y.protein$E
 ```
-
 
 Perform hierarchical clustering
 ```{r}
@@ -495,9 +488,6 @@ for (treatment in treatments) {
 ```
 
 
-
-
-
 ## 1.6. PCA
 I make 3 different ones, in each of them coloring by a different covariate
 ```{r}
@@ -534,6 +524,44 @@ do_pca(protein_mat,
 ```
 
 
+
+
+# 2. Introduce phenotypic data
+## 2.1. Some initial plots of the tolerance and resistance
+```{r}
+# Load data
+phenotypic_data <- fread(paste(base_dir, "ToleranceEvo_Wenxi/Data/phenotypic_data/processed_phenotypic_data.tsv", sep = ""))
+
+# Histograms of resistance and tolerance
+ggplot(data = phenotypic_data, aes(x = Resistance)) + 
+  geom_histogram(col = "black", fill = "grey") +
+  theme_light()
+ggplot(data = phenotypic_data, aes(x = Tolerance)) + 
+  geom_histogram(col = "black", fill = "grey") +
+  theme_light()
+
+# Boxplots of resistance and tolerances grouping by other variables
+ggplot(data = phenotypic_data, aes(x = Strain.Type, y = Resistance, group = Strain.Type)) +
+  geom_boxplot() +
+  theme_light()
+
+ggplot(data = phenotypic_data, aes(x = Strain.Type, y = Tolerance, group = Strain.Type)) +
+  geom_boxplot() +
+  theme_light()
+
+# Scatterplot Resistance vs. Tolerance and locate strains in that space
+ggplot(data = phenotypic_data, aes(x = Resistance, y = Tolerance, col = Strain.Name)) +
+  geom_point() +
+  theme_light()
+
+ggplot(data = phenotypic_data, aes(x = Resistance, y = Tolerance, col = Strain.Type)) +
+  geom_point() +
+  theme_light()
+
+ggplot(data = phenotypic_data, aes(x = Resistance, y = Tolerance, col = Passage)) +
+  geom_point() +
+  theme_light()
+```
 
 
 
