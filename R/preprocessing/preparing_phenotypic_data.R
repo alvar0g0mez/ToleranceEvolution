@@ -10,7 +10,7 @@
 # (need to ask Wenxi why he did that one), going to be using only the 25mg one for now! Otherwise, change it later
 
 # Created on: 13.10.2025
-# Last modified on: 13.10.2025
+# Last modified on: 15.10.2025
 
 
 # Libraries
@@ -62,8 +62,7 @@ pheno_lab_strain <- pheno_lab_strain %>%
   #dplyr::filter(!grepl("50-24", name)) %>%
   dplyr::select(-c(name, line, RAD80, RAD50, FoG80, FoG50, FoG20,
                    name_48, line_48, type_48, RAD80_48, RAD50_48, RAD20_48, FoG80_48, FoG50_48)) %>%
-  dplyr::rename(Resistance = RAD20,
-                Tolerance = FoG20_48)
+  dplyr::rename(FoG20 = FoG20_48)
 
 pheno_heteroresistant <- pheno_heteroresistant %>%
   dplyr::mutate(Strain.Type = "Heteroresistant") %>%
@@ -73,8 +72,7 @@ pheno_heteroresistant <- pheno_heteroresistant %>%
   #dplyr::filter(!grepl("50mg", name)) %>%
   dplyr::select(-c(name, line, RAD80, RAD50, FoG80, FoG50, FoG20,
                    name_48, line_48, type_48, RAD80_48, RAD50_48, RAD20_48, FoG80_48, FoG50_48)) %>%
-  dplyr::rename(Resistance = RAD20,
-                Tolerance = FoG20_48)
+  dplyr::rename(FoG20 = FoG20_48)
 
 pheno_high_tolerance <- pheno_high_tolerance %>%
   dplyr::mutate(Strain.Type = "High tolerance") %>%
@@ -84,8 +82,7 @@ pheno_high_tolerance <- pheno_high_tolerance %>%
   #dplyr::filter(!grepl("50mg", name)) %>%
   dplyr::select(-c(name, line, RAD80, RAD50, FoG80, FoG50, FoG20,
                    name_48, line_48, type_48, RAD80_48, RAD50_48, RAD20_48, FoG80_48, FoG50_48)) %>%
-  dplyr::rename(Resistance = RAD20,
-                Tolerance = FoG20_48)
+  dplyr::rename(FoG20 = FoG20_48)
 
 
 ## 2. Join all strains into a single dataframe

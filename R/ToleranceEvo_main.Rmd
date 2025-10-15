@@ -26,6 +26,7 @@ library(staplr)
 library(circlize)
 library(ComplexHeatmap)
 library(viridis)
+library(jsonlite)
 ```
 
 Set up
@@ -45,6 +46,22 @@ if (save_files_to == "s") {
 } else if (save_files_to == "local") {
   location_to_save <- paste(base_dir, "ToleranceEvo_Wenxi/", sep="")
 }
+
+
+# Significance level used for defining proteins as DE
+alpha <- 0.05
+
+# Significance level above as a plain string to use when loading or writing files
+alpha_plain <- str_replace(as.character(alpha), "\\.", "")
+
+# Separate significance level, the one used for the enrichment analysis
+alpha_enrichment <- 0.1
+
+# Significance level above as a plain string to use when loading or writing files
+alpha_enrichment_plain <- str_replace(as.character(alpha_enrichment), "\\.", "")
+
+# Log-fold change limit to be considered "biologically significant"
+lfc_threshold <- 0.5
 ```
 
 
@@ -128,171 +145,7 @@ saveRDS(summarization_results, paste(base_dir, "ToleranceEvo_Wenxi/Data/Preproce
 ```
 
 
-## 1.2. Differential expression analysis
-### 1.2.1. Separately for each treatment
-I run into the issue that lab strain at passage 0 in fluconazole was removed during pre-processing. I think that's possibly expected, since it's a lab strain and it's had no time to adapt, fluconazole will kill it, hence it's understandable that the proteome we detect in it is quite messy. Should check this with Wenxi though. 
-```{r}
-## Divide the dataset into 3 based on culture type (pellet, liquid, liquid+fluconazole) and perform DE analysis separate for each, using lab strain at passage 0 as reference
-#treatments <- unique(metadata$Treatment)[!(unique(metadata$Treatment) == "QC")]
-#da_list <- list()
-#responsiveness_list <- list()
-#
-#for (treatment in treatments) {
-#  # Grab the strains with this treatment
-#  samples_to_select <- metadata$Sample.Name[metadata$Treatment == treatment]
-#  temp_protein_mat <- protein_mat[, colnames(protein_mat) %in% samples_to_select]
-#  reference_strain <- unique(metadata$Strain.Name[metadata$Treatment == treatment &
-#                                             metadata$Passage == 0 &
-#                                             metadata$Strain.Type == "Lab strain"])[1]
-#  
-#  # Run differential expression analysis
-#  de_analysis_results <- de_analysis(raw_data = temp_protein_mat,
-#                                     metadata = metadata,
-#                                     method = "limma",
-#                                     strain_name_column = "Strain.Name", 
-#                                     sample_name_column = "Sample.Name", 
-#                                     reference_strain = reference_strain,
-#                                     N = 10,
-#                                     lfc_threshold = 1,
-#                                     alpha = 0.05)
-#  da <- de_analysis_results$DE_df
-#  da_list[[treatment]] <- da
-#  
-#  # Get responsiveness df
-#  resp <- create_responsiveness_df(da,
-#                                   lfc_threshold = 1,
-#                                   alpha = 0.05)
-#  responsiveness_list[[treatment]] <- resp
-#}
-#
-#
-#
-```
-
-### 1.2.2. All strains together, using C0L as the reference
-Decided to use this one because it's the lab strain, at passage 0, and in liquid because it's supposed to have had a bit more time to grow than the solid one
-```{r}
-# Main DE analysis - produces the da dataframe
-de_analysis_results_vs_C0L <- de_analysis(raw_data = summarization_results$y.protein,
-                                   metadata = metadata,
-                                   method = "limpa",
-                                   strain_name_column = "Strain.Name", 
-                                   sample_name_column = "Sample.Name", 
-                                   reference_strain = "C0L",
-                                   N = 10,
-                                   lfc_threshold = 1,
-                                   alpha = 0.05)
-da_vs_C0L <- de_analysis_results_vs_C0L$DE_df
-
-# From the da dataframe, create responsiveness dataframe, summarize DEPs per strain
-resp_vs_C0L <- create_responsiveness_df(da = da_vs_C0L,
-                                        alpha = 0.05,
-                                        lfc_threshold = 1)
-
-# Add other informative columns to resp df
-temp <- metadata %>%
-  dplyr::select(Strain.Name, Strain.Type, Treatment, Passage) %>%
-  dplyr::distinct(Strain.Name, .keep_all = T)
-resp_vs_C0L <- left_join(resp_vs_C0L, temp, by = "Strain.Name")
-```
-
-### 1.2.3. All strains together, using C0P as the reference
-When using C0L as reference, I saw DEPs only in pellet and liquid+fluconazole, pointing towards the fact that it is the treatment that drives the proteome, not the strain nor the passage
-```{r}
-# Main DE analysis - produces the da dataframe
-de_analysis_results_vs_C0P <- de_analysis(raw_data = summarization_results$y.protein,
-                                   metadata = metadata,
-                                   method = "limpa",
-                                   strain_name_column = "Strain.Name", 
-                                   sample_name_column = "Sample.Name", 
-                                   reference_strain = "C0P",
-                                   N = 10,
-                                   lfc_threshold = 1,
-                                   alpha = 0.05)
-da_vs_C0P <- de_analysis_results_vs_C0P$DE_df
-
-# From the da dataframe, create responsiveness dataframe, summarize DEPs per strain
-resp_vs_C0P <- create_responsiveness_df(da = da_vs_C0P,
-                                        alpha = 0.05,
-                                        lfc_threshold = 1)
-
-# Add other informative columns to resp df
-temp <- metadata %>%
-  dplyr::select(Strain.Name, Strain.Type, Treatment, Passage) %>%
-  dplyr::distinct(Strain.Name, .keep_all = T)
-resp_vs_C0P <- left_join(resp_vs_C0P, temp, by = "Strain.Name")
-```
-
-
-## 1.3. Boxplots for DE
-### 1.3.1. DE vs. C0L
-```{r}
-# Per strain
-ggplot(data = resp_vs_C0L, aes(x = Strain.Type, y = nDEP, group = Strain.Type, fill = Strain.Type)) +
-  geom_boxplot() +
-  geom_jitter(color="black", size=2, alpha=0.9) +
-  theme_light() +
-  xlab("Strain type") +
-  ylab("nDEP") +
-  labs(title = "Number of differentially expressed proteins vs. C0L",
-       subtitle = "By strain type")
-
-# Per passage
-ggplot(data = resp_vs_C0L, aes(x = Passage, y = nDEP, group = Passage, fill = Passage)) +
-  geom_boxplot() +
-  geom_jitter(color="black", size=2, alpha=0.9) +
-  theme_light() +
-  xlab("Passage") +
-  ylab("nDEP") +
-  labs(title = "Number of differentially expressed proteins vs. C0L",
-       subtitle = "By passage")
-
-# Per treatment
-ggplot(data = resp_vs_C0L, aes(x = Treatment, y = nDEP, group = Treatment, fill = Treatment)) +
-  geom_boxplot() +
-  geom_jitter(color="black", size=2, alpha=0.9) +
-  theme_light() +
-  xlab("Treatment") +
-  ylab("nDEP") +
-  labs(title = "Number of differentially expressed proteins vs. C0L",
-       subtitle = "By treatment")
-```
-
-### 1.3.2. DE vs. C0P
-```{r}
-# Per strain
-ggplot(data = resp_vs_C0P, aes(x = Strain.Type, y = nDEP, group = Strain.Type, fill = Strain.Type)) +
-  geom_boxplot() +
-  geom_jitter(color="black", size=2, alpha=0.9) +
-  theme_light() +
-  xlab("Strain type") +
-  ylab("nDEP") +
-  labs(title = "Number of differentially expressed proteins vs. C0P",
-       subtitle = "By strain type")
-
-# Per passage
-ggplot(data = resp_vs_C0P, aes(x = Passage, y = nDEP, group = Passage, fill = Passage)) +
-  geom_boxplot() +
-  geom_jitter(color="black", size=2, alpha=0.9) +
-  theme_light() +
-  xlab("Passage") +
-  ylab("nDEP") +
-  labs(title = "Number of differentially expressed proteins vs. C0P",
-       subtitle = "By passage")
-
-# Per treatment
-ggplot(data = resp_vs_C0P, aes(x = Treatment, y = nDEP, group = Treatment, fill = Treatment)) +
-  geom_boxplot() +
-  geom_jitter(color="black", size=2, alpha=0.9) +
-  theme_light() +
-  xlab("Treatment") +
-  ylab("nDEP") +
-  labs(title = "Number of differentially expressed proteins vs. C0P",
-       subtitle = "By treatment")
-```
-
-
-## 1.4. Clustering analysis
+## 1.2. Clustering analysis
 Load protein-level data so I don't have to run the code above every time
 ```{r}
 summarization_results <- readRDS(paste(base_dir, "ToleranceEvo_Wenxi/Data/Preprocessing_steps/protein_summarized_fully_imputed.rds", sep = ""))
@@ -385,8 +238,8 @@ trna_ko_high_var <- protein_mat[rownames(protein_mat) %in% most_variable_protein
 ```
 
 
-## 1.5. Heatmaps
-### 1.5.1. Heatmap with Z-score based on median per protein - for all samples
+## 1.3. Heatmaps
+### 1.3.1. Heatmap with Z-score based on median per protein - for all samples
 So this is basically focusing on the variability of each protein across all the samples - removing the basal "effect" of that protein?
 ```{r}
 classifications <- c("Strain.Type", "Treatment", "Passage")
@@ -409,7 +262,7 @@ for (classification in classifications) {
 }
 ```
 
-### 1.5.2. Separate heatmaps for each treatment group
+### 1.3.2. Separate heatmaps for each treatment group
 Since in the heatmap for all samples together, these cluster only around treatment group, I want to see, within each treatment group, do the samples cluster based on the other parameters?
 ```{r}
 treatments <- unique(metadata$Treatment)[!(unique(metadata$Treatment) %in% c("QC"))]
@@ -454,7 +307,7 @@ for (treatment in treatments) {
 }
 ```
 
-### 1.5.3. Let me actually separate this by Strain.Type_Passage
+### 1.3.3. Let me actually separate this by Strain.Type_Passage
 ```{r}
 treatments <- unique(metadata$Treatment)[!(unique(metadata$Treatment) %in% c("QC"))]
 
@@ -488,7 +341,7 @@ for (treatment in treatments) {
 ```
 
 
-## 1.6. PCA
+## 1.4. PCA
 I make 3 different ones, in each of them coloring by a different covariate
 ```{r}
 do_pca(protein_mat,
@@ -524,6 +377,158 @@ do_pca(protein_mat,
 ```
 
 
+## 1.5. Differential expression analysis
+### 1.5.1 Only for liquid - this seems to be the one we are going with from now on
+```{r}
+# Grab only liquid treatment samples
+treatments <- unique(metadata$Treatment)[!(unique(metadata$Treatment) == "QC")]
+samples_to_select <- metadata$Sample.Name[metadata$Treatment == "Liquid"]
+temp_protein_mat <- protein_mat[, colnames(protein_mat) %in% samples_to_select]
+reference_strain <- unique(metadata$Strain.Name[metadata$Treatment == "Liquid" &
+                                             metadata$Passage == 0 &
+                                             metadata$Strain.Type == "Lab strain"])[1]
+
+# Run differential expression analysis
+de_analysis_results <- de_analysis(raw_data = temp_protein_mat,
+                                   metadata = metadata,
+                                   method = "limma",
+                                   strain_name_column = "Strain.Name", 
+                                   sample_name_column = "Sample.Name", 
+                                   reference_strain = reference_strain,
+                                   N = 10,
+                                   lfc_threshold = 0.5,
+                                   alpha = 0.05)
+da <- de_analysis_results$DE_df
+write_json(da, path=paste(base_dir, "ToleranceEvo_Wenxi/Data/enrichment_analysis/da_", alpha_plain, "_logFC_", as.character(lfc_threshold), ".json", sep=""), pretty = T)
+
+# Get responsiveness df
+resp <- create_responsiveness_df(da,
+                                 lfc_threshold = 1,
+                                 alpha = 0.05)
+```
+
+### 1.5.2. All strains together, using C0L as the reference - OLD, PROBABLY DELETE
+Decided to use this one because it's the lab strain, at passage 0, and in liquid because it's supposed to have had a bit more time to grow than the solid one
+```{r}
+# Main DE analysis - produces the da dataframe
+de_analysis_results_vs_C0L <- de_analysis(raw_data = summarization_results$y.protein,
+                                   metadata = metadata,
+                                   method = "limpa",
+                                   strain_name_column = "Strain.Name", 
+                                   sample_name_column = "Sample.Name", 
+                                   reference_strain = "C0L",
+                                   N = 10,
+                                   lfc_threshold = 1,
+                                   alpha = 0.05)
+da_vs_C0L <- de_analysis_results_vs_C0L$DE_df
+
+# From the da dataframe, create responsiveness dataframe, summarize DEPs per strain
+resp_vs_C0L <- create_responsiveness_df(da = da_vs_C0L,
+                                        alpha = 0.05,
+                                        lfc_threshold = 1)
+
+# Add other informative columns to resp df
+temp <- metadata %>%
+  dplyr::select(Strain.Name, Strain.Type, Treatment, Passage) %>%
+  dplyr::distinct(Strain.Name, .keep_all = T)
+resp_vs_C0L <- left_join(resp_vs_C0L, temp, by = "Strain.Name")
+```
+
+### 1.5.3. All strains together, using C0P as the reference - OLD, PROBABLY DELETE
+When using C0L as reference, I saw DEPs only in pellet and liquid+fluconazole, pointing towards the fact that it is the treatment that drives the proteome, not the strain nor the passage
+```{r}
+# Main DE analysis - produces the da dataframe
+de_analysis_results_vs_C0P <- de_analysis(raw_data = summarization_results$y.protein,
+                                   metadata = metadata,
+                                   method = "limpa",
+                                   strain_name_column = "Strain.Name", 
+                                   sample_name_column = "Sample.Name", 
+                                   reference_strain = "C0P",
+                                   N = 10,
+                                   lfc_threshold = 1,
+                                   alpha = 0.05)
+da_vs_C0P <- de_analysis_results_vs_C0P$DE_df
+
+# From the da dataframe, create responsiveness dataframe, summarize DEPs per strain
+resp_vs_C0P <- create_responsiveness_df(da = da_vs_C0P,
+                                        alpha = 0.05,
+                                        lfc_threshold = 1)
+
+# Add other informative columns to resp df
+temp <- metadata %>%
+  dplyr::select(Strain.Name, Strain.Type, Treatment, Passage) %>%
+  dplyr::distinct(Strain.Name, .keep_all = T)
+resp_vs_C0P <- left_join(resp_vs_C0P, temp, by = "Strain.Name")
+```
+
+
+## 1.6. Boxplots for DE
+### 1.6.1. DE vs. C0L
+```{r}
+# Per strain
+ggplot(data = resp_vs_C0L, aes(x = Strain.Type, y = nDEP, group = Strain.Type, fill = Strain.Type)) +
+  geom_boxplot() +
+  geom_jitter(color="black", size=2, alpha=0.9) +
+  theme_light() +
+  xlab("Strain type") +
+  ylab("nDEP") +
+  labs(title = "Number of differentially expressed proteins vs. C0L",
+       subtitle = "By strain type")
+
+# Per passage
+ggplot(data = resp_vs_C0L, aes(x = Passage, y = nDEP, group = Passage, fill = Passage)) +
+  geom_boxplot() +
+  geom_jitter(color="black", size=2, alpha=0.9) +
+  theme_light() +
+  xlab("Passage") +
+  ylab("nDEP") +
+  labs(title = "Number of differentially expressed proteins vs. C0L",
+       subtitle = "By passage")
+
+# Per treatment
+ggplot(data = resp_vs_C0L, aes(x = Treatment, y = nDEP, group = Treatment, fill = Treatment)) +
+  geom_boxplot() +
+  geom_jitter(color="black", size=2, alpha=0.9) +
+  theme_light() +
+  xlab("Treatment") +
+  ylab("nDEP") +
+  labs(title = "Number of differentially expressed proteins vs. C0L",
+       subtitle = "By treatment")
+```
+
+### 1.6.2. DE vs. C0P
+```{r}
+# Per strain
+ggplot(data = resp_vs_C0P, aes(x = Strain.Type, y = nDEP, group = Strain.Type, fill = Strain.Type)) +
+  geom_boxplot() +
+  geom_jitter(color="black", size=2, alpha=0.9) +
+  theme_light() +
+  xlab("Strain type") +
+  ylab("nDEP") +
+  labs(title = "Number of differentially expressed proteins vs. C0P",
+       subtitle = "By strain type")
+
+# Per passage
+ggplot(data = resp_vs_C0P, aes(x = Passage, y = nDEP, group = Passage, fill = Passage)) +
+  geom_boxplot() +
+  geom_jitter(color="black", size=2, alpha=0.9) +
+  theme_light() +
+  xlab("Passage") +
+  ylab("nDEP") +
+  labs(title = "Number of differentially expressed proteins vs. C0P",
+       subtitle = "By passage")
+
+# Per treatment
+ggplot(data = resp_vs_C0P, aes(x = Treatment, y = nDEP, group = Treatment, fill = Treatment)) +
+  geom_boxplot() +
+  geom_jitter(color="black", size=2, alpha=0.9) +
+  theme_light() +
+  xlab("Treatment") +
+  ylab("nDEP") +
+  labs(title = "Number of differentially expressed proteins vs. C0P",
+       subtitle = "By treatment")
+```
+
 
 
 # 2. Introduce phenotypic data
@@ -532,36 +537,291 @@ do_pca(protein_mat,
 # Load data
 phenotypic_data <- fread(paste(base_dir, "ToleranceEvo_Wenxi/Data/phenotypic_data/processed_phenotypic_data.tsv", sep = ""))
 
-# Histograms of resistance and tolerance
-ggplot(data = phenotypic_data, aes(x = Resistance)) + 
+# Histograms of RAD20 and FoG20
+ggplot(data = phenotypic_data, aes(x = RAD20)) + 
   geom_histogram(col = "black", fill = "grey") +
-  theme_light()
-ggplot(data = phenotypic_data, aes(x = Tolerance)) + 
+  theme_light() +
+  ylab("Number of strains") +
+  labs(title = "Strains in ToleranceEvo - small scale proteomics", 
+       subtitle = "Passages 0, 4 and 7")
+ggplot(data = phenotypic_data, aes(x = FoG20)) + 
   geom_histogram(col = "black", fill = "grey") +
-  theme_light()
+  theme_light() +
+  ylab("Number of strains") +
+  labs(title = "Strains in ToleranceEvo - small scale proteomics", 
+       subtitle = "Passages 0, 4 and 7")
 
-# Boxplots of resistance and tolerances grouping by other variables
-ggplot(data = phenotypic_data, aes(x = Strain.Type, y = Resistance, group = Strain.Type)) +
+# Boxplots of RAD20 and FoG20s grouping by other variables
+ggplot(data = phenotypic_data, aes(x = Strain.Type, y = RAD20, group = Strain.Type)) +
   geom_boxplot() +
   theme_light()
 
-ggplot(data = phenotypic_data, aes(x = Strain.Type, y = Tolerance, group = Strain.Type)) +
+ggplot(data = phenotypic_data, aes(x = Strain.Type, y = FoG20, group = Strain.Type)) +
   geom_boxplot() +
   theme_light()
 
-# Scatterplot Resistance vs. Tolerance and locate strains in that space
-ggplot(data = phenotypic_data, aes(x = Resistance, y = Tolerance, col = Strain.Name)) +
+# Scatterplot RAD20 vs. FoG20 and locate strains in that space
+ggplot(data = phenotypic_data, aes(x = RAD20, y = FoG20, col = Strain.Name)) +
   geom_point() +
   theme_light()
 
-ggplot(data = phenotypic_data, aes(x = Resistance, y = Tolerance, col = Strain.Type)) +
+ggplot(data = phenotypic_data, aes(x = RAD20, y = FoG20, col = Strain.Type)) +
   geom_point() +
   theme_light()
 
-ggplot(data = phenotypic_data, aes(x = Resistance, y = Tolerance, col = Passage)) +
+ggplot(data = phenotypic_data, aes(x = RAD20, y = FoG20, col = Passage)) +
   geom_point() +
   theme_light()
 ```
+
+## 2.2. Classify strains into high, medium or low tolerance and resistance based on these plots, in order to interpret proteomics results based on this
+```{r}
+
+```
+
+## 2.3. Heatmaps - informed by resistance and tolerance levels
+```{r}
+
+```
+
+## 2.4. PCA - colored by resistance and tolerance levels
+```{r}
+
+```
+
+
+
+
+# 3. GSEA
+## 3.1. Prepare ranked gene lists
+For now, my score/rank is: sign(logFC)*(-log10(adj.P.Val))
+```{r}
+# Load list of all dataframes (one per strain) with the DE results
+da <- read_json(paste(base_dir, "ToleranceEvo_Wenxi/Data/enrichment_analysis/da_", alpha_plain, "_logFC_", as.character(lfc_threshold), ".json", sep=""), simplifyVector = T)
+
+# Now da is a collapsed dataframe with all strains, need to separate it per strain and put the resulting dataframes into a list
+da_list <- list()
+strains <- unique(da$Strain.Name)
+for (i in 1:length(strains)) {
+  strain <- strains[i]
+  temp <- da %>%
+    dplyr::filter(Strain.Name == strain)
+  da_list[[strain]] <- temp
+}
+
+# Create empty list to put the named ranked gene lists in
+ranked_genes <- list()
+number_of_proteins_with_no_Entrez_ID <- c()
+
+# Iterate over these dataframes
+for (i in 1:length(da)) {
+  temp <- da[[i]]
+  
+  # Get the corresponding Entrez IDs to these systematic gene names, since the GSEA is performed in terms of those
+  temp$Protein_stable_ID <- rownames(temp)
+  entrez_temp <- entrez_db %>%
+    dplyr::select(Protein_stable_ID, `NCBI_gene_(formerly_Entrezgene)_ID`)
+  temp <- left_join(temp, entrez_temp, by = "Protein_stable_ID")
+  rownames(temp) <- NULL
+  temp <- temp %>%
+    dplyr::select(logFC, adj.P.Val, `NCBI_gene_(formerly_Entrezgene)_ID`) %>%
+    dplyr::rename(gene_symbol = `NCBI_gene_(formerly_Entrezgene)_ID`)
+  
+  # Get rid of the proteins for which we don't have the Entrez ID (and save the count of how many of them there are, to check it's not too many) - otherwise GSEA doesn't work
+  number_of_proteins_with_no_Entrez_ID <- c(number_of_proteins_with_no_Entrez_ID, sum(is.na(temp$gene_symbol)))
+  temp <- temp %>%
+    dplyr::filter(!is.na(gene_symbol))
+  
+  # Using as score the -log10(p-value)*sign of the logFC
+  rankings <- sign(temp$logFC)*(-log10(temp$adj.P.Val))
+  names(rankings) <- temp$gene_symbol
+  rankings <- sort(rankings, decreasing = TRUE)
+  
+  # Plot
+  plot(rankings)
+  
+  # Check max and min - to see if there is a need to correct for -Inf and +Inf - commented out, I don't think it's necessary
+  #print(max(rankings))
+  #print(min(rankings))
+  
+  # Some genes have such low p values that the signed pval is +- inf, we need to change it to the maximum * constant to avoid problems with fgsea
+  # (this part is copy pasted from the link)
+  max_ranking <- max(rankings[is.finite(rankings)])
+  min_ranking <- min(rankings[is.finite(rankings)])
+  rankings <- replace(rankings, rankings > max_ranking, max_ranking * 10)
+  rankings <- replace(rankings, rankings < min_ranking, min_ranking * 10)
+  rankings <- sort(rankings, decreasing = TRUE) # sort genes by ranking
+  
+  # Add them to the list where we are saving them
+  ranked_genes[[names(da)[i]]] <- rankings
+}
+
+
+# Save this ranked lists so that I can use them later to pick the top 50 proteins in each strain, to look at the overlaps between major strains within families in a more unbiased manner - not really feasible for now since the distribution of the scores for the vast majority of strains is pretty much flat. I wonder how much this affects my DEA?
+write_json(ranked_genes, path = paste(base_dir, "tRNA_KOs/Data/enrichment_analysis/lists_of_ranked_genes_", alpha_plain, "_logFC_", as.character(lfc_threshold), sep=""),
+           pretty = T)
+```
+
+
+## 3.2. Perform GSEA with KEGG annotation - as described by https://biostatsquid.com/fgsea-tutorial-gsea/
+### Download KEGG gene lists (according to https://www.researchgate.net/post/How_i_can_get_a_list_of_KEGG_pathways_and_its_list_of_genes)
+DO NOT RUN AGAIN - I used this to download the .gmt file, I just need to load it, but I left this code here in case I want to know how I did it
+```{r}
+#BiocManager::install("KEGGREST")
+#BiocManager::install("EnrichmentBrowser")
+#library("KEGGREST")
+#library("EnrichmentBrowser")
+#
+##step2: check and obtain a list of entry identifiers (in this case: sce) and associated definition for a given database or a given set of database entries.
+#MRSA252 <- keggList("sce")
+#
+##step 3: download the pathways of that organism:
+#sarpathway <- downloadPathways("sce")
+#
+##step 4: retrieve gene sets for an organism from databases such as GO and KEGG:
+#sar <- getGenesets(org = "sce", db = "kegg", cache = TRUE, return.type="list")
+#
+##step5: Parse and write the gene sets to a flat text file in GMT format for other pathway enrichment analysis programs (e.g., GSEA):
+#writeGMT(sar, gmt.file = paste(base_dir, "Data/Other/enrichment_analysis/20250305_kegg_sce_gmt", sep=""))
+```
+
+### Process .gmt file to turn it into the list of gene set vectors we need for gsea()
+Get a list of pathways, with each entry being a vector with the Entrez IDs for the genes involved in that pathway. Make it so that only proteins that we detect in our dataset are included here. 
+```{r}
+# Read in the .gmt file
+gmt <- read.gmt(paste(base_dir, "tRNA_KOs/Data/enrichment_analysis/20250305_kegg_sce_gmt", sep=""))
+gmt$term <- as.character(gmt$term)
+
+# Get a simple vector with the Entrez IDs of the proteins we detect
+trna_ko <- as.data.frame(as.matrix(fread(paste(base_dir, "tRNA_KOs/Data/proteomics_data/processed_proteomics_dataframe.tsv", sep="")), rownames = 1))
+yeastmine <- as.data.frame(fread(paste(base_dir, "tRNA_KOs/Data/databases/alliancemine_results_2024-11-20T11-19-04.tsv", sep="")))
+proteins_detected <- match_systematic_and_standard_protein_names(data = rownames(trna_ko),
+                                                                 yeastmine = yeastmine,
+                                                                 input = "standard",
+                                                                 simplify = T)
+proteins_detected <- entrez_db$`NCBI_gene_(formerly_Entrezgene)_ID`[entrez_db$Protein_stable_ID %in% proteins_detected]
+
+# Get our list of vectors, where each vector is a KEGG pathway and the terms in it are the genes related to it - keeping only genes which are detected in our dataset
+gmt <- gmt %>%
+  mutate(pathway_code = substr(term, 1, str_locate(term, "_")[1]-1), 
+         pathway_name = substr(term, str_locate(term, "_")[1]+1, nchar(term)))
+
+kegg_genes <- list()
+pathways <- unique(gmt$pathway_name)
+for (i in 1:length(pathways)) {
+  pathway <- pathways[i]
+  temp <- gmt %>%
+    filter(pathway_name == pathway)
+  kegg_genes[[pathway]] <- as.character(temp$gene)[as.character(temp$gene) %in% proteins_detected]
+}
+```
+
+### Run GSEA
+The warning I get here refers to many proteins having exactly the same rank (these are the ones we see in a horizontal line in the plots produced in 5.1.) - this should be okay, since these are the genes that were not significantly differentially expressed at all - but tbh this makes it so that I cannot really get that much info from those anyway, right? So there isn't that much of a difference between this and doing the GSEA only with DE proteins, right?? Idk
+```{r}
+kegg_gsea_results <- list()
+
+for (i in 1:length(ranked_genes)) {
+  kegg_gsea_results[[names(ranked_genes)[i]]] <- fgsea(pathways = kegg_genes,                                # List of gene sets to check
+                                                       stats = ranked_genes[[i]],
+                                                       scoreType = 'std',                                     
+                                                                      # in this case we have both pos and neg rankings. if only pos or neg, set to 'pos', 'neg'
+                                                       minSize = 1,
+                                                       maxSize = 1000,
+                                                       nproc = 1)                                             # for parallelisation
+}
+
+
+# This returns a list, where each element is a dataframe for the corresponding KO strain, and each row in that dataframe is a pathway. However, all pathways are included, so we are going to filter all of these dataframes to keep only the pathways that are significant in each KO strain
+kegg_gsea_results_filtered <- lapply(kegg_gsea_results, function(x) filter(x, padj < alpha_enrichment))
+bool <- sapply(kegg_gsea_results_filtered, function(x) nrow(x)>0)
+kegg_gsea_results_filtered <- kegg_gsea_results_filtered[bool]
+
+# Save these results
+write_json(kegg_gsea_results_filtered, paste(base_dir, "tRNA_KOs/Data/enrichment_analysis/kegg_gsea_results_", alpha_plain, "_logFC_", as.character(lfc_threshold), "_enrichment_alpha_", alpha_enrichment_plain, ".json", sep=""), pretty = T)
+```
+
+
+## 3.3. GSEA with GO annotation
+### Get the information equivalent to that in the .gmt file and save it as gene set vectors already - code from ChatGPT
+Initially I was then saving this info to an actual .gmt file to them use it, but honestly that just made everything more convoluted, I'm just going to save it as a list of vectors, as a JSON file and that's it :)
+```{r}
+# Step 1: Connect to Ensembl Fungi
+ensembl_fungi <- useMart("fungi_mart", dataset = "scerevisiae_eg_gene", host = "https://fungi.ensembl.org")
+
+# Step 2: Retrieve GO annotations
+go_annotations <- getBM(attributes = c("ensembl_gene_id", "external_gene_name", 
+                                       "go_id", "name_1006", "namespace_1003", "entrezgene_id"),
+                        mart = ensembl_fungi)
+
+# This is added by me
+trna_ko <- as.data.frame(as.matrix(fread(paste(base_dir, "tRNA_KOs/Data/proteomics_data/processed_proteomics_dataframe.tsv", sep="")), rownames = 1))
+go_annotations <- go_annotations %>%
+  dplyr::filter(namespace_1003 != "go") %>%                                     # Pretty sure these rows are just wrong, or at least not useful to me
+  dplyr::filter(ensembl_gene_id %in% rownames(trna_ko)) %>%                     # Keep only those genes which are detected in our data, so as to prevent bias
+  dplyr::mutate(gene_set = case_when(namespace_1003 == "molecular_function" ~ paste(name_1006, " (MF)", sep=""),
+                              namespace_1003 == "biological_process" ~ paste(name_1006, " (BP)", sep=""),
+                              namespace_1003 == "cellular_component" ~ paste(name_1006, " (CC)", sep="")))
+
+# Check the first few rows
+head(go_annotations)
+
+# Step 3: Filter for Biological Process (BP) only - not interested in using this for now
+go_annotations <- go_annotations %>%
+  #filter(namespace_1003 == "biological_process") %>%
+  filter(go_id != "")  # Remove any empty GO terms if present
+
+# Step 4: Build a list: GO Term -> Genes
+# Use external_gene_name (common names) or ensembl_gene_id (your choice)
+go_list <- split(go_annotations$entrezgene_id, go_annotations$gene_set)
+
+# Step 5: Save this named list of vectors as a JSON file
+write_json(go_list, path = paste(base_dir, "tRNA_KOs/Data/enrichment_analysis/go_list_gmt.json", sep=""), pretty = T)
+```
+
+### Load the gene set vectors created in the previous chunk
+Get a list of pathways, with each entry being a vector with the Entrez IDs for the genes involved in that pathway. Make it so that only proteins that we detect in our dataset are included here. 
+```{r}
+# Read in the .json file
+go_gene_sets <- read_json(path = paste(base_dir, "tRNA_KOs/Data/enrichment_analysis/go_list_gmt.json", sep=""), simplifyVector = T)
+```
+
+### Run GSEA
+The warning I get here refers to many proteins having exactly the same rank (these are the ones we see in a horizontal line in the plots produced in 5.1.) - this should be okay, since these are the genes that were not significantly differentially expressed at all - but tbh this makes it so that I cannot really get that much info from those anyway, right? So there isn't that much of a difference between this and doing the GSEA only with DE proteins, right?? Idk
+```{r}
+go_gsea_results <- list()
+
+for (i in 1:length(ranked_genes)) {
+  go_gsea_results[[names(ranked_genes)[i]]] <- fgsea(pathways = go_gene_sets,                                # List of gene sets to check
+                                                       stats = ranked_genes[[i]],
+                                                       scoreType = 'std',                                     
+                                                                      # in this case we have both pos and neg rankings. if only pos or neg, set to 'pos', 'neg'
+                                                       minSize = 1,
+                                                       maxSize = 1000,
+                                                       nproc = 1)                                             # for parallelisation
+}
+
+
+# This returns a list, where each element is a dataframe for the corresponding KO strain, and each row in that dataframe is a pathway. However, all pathways are included, so we are going to filter all of these dataframes to keep only the pathways that are significant in each KO strain
+go_gsea_results_filtered <- lapply(go_gsea_results, function(x) filter(x, padj < alpha_enrichment))
+bool <- sapply(go_gsea_results_filtered, function(x) nrow(x)>0)
+go_gsea_results_filtered <- go_gsea_results_filtered[bool]
+
+# Save these results
+write_json(go_gsea_results_filtered, paste(base_dir, "tRNA_KOs/Data/enrichment_analysis/go_gsea_results_", alpha_plain, "_logFC_", as.character(lfc_threshold), "_enrichment_alpha_", alpha_enrichment_plain, ".json", sep=""), pretty = T)
+```
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
