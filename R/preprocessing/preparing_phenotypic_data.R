@@ -52,13 +52,12 @@ pheno_high_tolerance <- as.data.frame(read.xlsx(paste(base_dir, "ToleranceEvo_We
 
 
 # Processing
-## 1. Create strain column, replicate column and passage column, filter out the rows for passage 7 with 50mg,
-## remove unnecessary columns, and rename Type (Replicate), RAD20 and FoG20_48
+## 1. Create strain column, replicate column and passage column,
+## remove unnecessary columns, and rename Type (Replicate) and FoG20_48
 pheno_lab_strain <- pheno_lab_strain %>%
   dplyr::mutate(Strain.Type = "Lab strain") %>%
   dplyr::rename(Replicate = type) %>%
   dplyr::mutate(Passage = as.character(as.numeric(str_extract(name, "(?<=pa)."))-1)) %>%
-  dplyr::filter(Passage %in% c("0", "4", "7")) %>%
   #dplyr::filter(!grepl("50-24", name)) %>%
   dplyr::select(-c(name, line, RAD80, RAD50, FoG80, FoG50, FoG20,
                    name_48, line_48, type_48, RAD80_48, RAD50_48, RAD20_48, FoG80_48, FoG50_48)) %>%
@@ -68,7 +67,6 @@ pheno_heteroresistant <- pheno_heteroresistant %>%
   dplyr::mutate(Strain.Type = "Heteroresistant") %>%
   dplyr::rename(Replicate = type) %>%
   dplyr::mutate(Passage = as.character(as.numeric(str_extract(name, ".(?=I)"))-1)) %>%
-  dplyr::filter(Passage %in% c("0", "4", "7")) %>%
   #dplyr::filter(!grepl("50mg", name)) %>%
   dplyr::select(-c(name, line, RAD80, RAD50, FoG80, FoG50, FoG20,
                    name_48, line_48, type_48, RAD80_48, RAD50_48, RAD20_48, FoG80_48, FoG50_48)) %>%
@@ -78,7 +76,6 @@ pheno_high_tolerance <- pheno_high_tolerance %>%
   dplyr::mutate(Strain.Type = "High tolerance") %>%
   dplyr::rename(Replicate = type) %>%
   dplyr::mutate(Passage = as.character(as.numeric(str_extract(name, ".(?=H)"))-1)) %>%
-  dplyr::filter(Passage %in% c("0", "4", "7")) %>%
   #dplyr::filter(!grepl("50mg", name)) %>%
   dplyr::select(-c(name, line, RAD80, RAD50, FoG80, FoG50, FoG20,
                    name_48, line_48, type_48, RAD80_48, RAD50_48, RAD20_48, FoG80_48, FoG50_48)) %>%
@@ -87,6 +84,13 @@ pheno_high_tolerance <- pheno_high_tolerance %>%
 
 ## 2. Join all strains into a single dataframe
 pheno_full <- rbind(pheno_high_tolerance, rbind(pheno_lab_strain, pheno_heteroresistant))
+
+### Save this full dataframe with all passages - can't do it after matching to metadata, because there are only passages 0, 4 and 7 there
+fwrite(pheno_full, paste(base_dir, "ToleranceEvo_Wenxi/Data/phenotypic_data/processed_phenotypic_data_all_passages.tsv", sep = ""))
+
+### Keep only passages 0, 4 and 7 and save separately
+pheno_full <- pheno_full %>%
+  dplyr::filter(Passage %in% c(0, 4, 7))
 
 
 ## 3. Match to metadata (this is subject to confirming that the replicates here is where the replicates at the proteomic
@@ -103,8 +107,7 @@ temp_metadata <- metadata %>%
 
 final_pheno <- left_join(temp_metadata, pheno_full, by = c("Replicate", "Strain.Type", "Passage"))
 
-
-# Save this dataset
+### Save dataset
 fwrite(final_pheno, paste(base_dir, "ToleranceEvo_Wenxi/Data/phenotypic_data/processed_phenotypic_data.tsv", sep = ""))
 
 

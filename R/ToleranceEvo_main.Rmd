@@ -40,7 +40,7 @@ if (working_from == "home") {
     base_dir = "C:/MyStuff/"
   }
 
-save_files_to <- "s"
+save_files_to <- "local"
 if (save_files_to == "s") {
   location_to_save <- "S:/AG/AG-CF-HTMS/AG-Ralser-Share/30-0156_WenxiQi-ToleranceEvo/05_DataAnalysis/11_Analysis_Alvaro/"
 } else if (save_files_to == "local") {
@@ -142,6 +142,12 @@ protein_mat <- summarization_results$y.protein$E
 
 # Save protein level dataset
 saveRDS(summarization_results, paste(base_dir, "ToleranceEvo_Wenxi/Data/Preprocessing_steps/protein_summarized_fully_imputed.rds", sep = ""))
+
+# Quickly look at the distribution of the protein abundances
+protein_abundances_long <- pivot_longer(as.data.frame(protein_mat), cols = everything(), names_to = "Sample.Name", values_to = "Abundance")
+ggplot(data = protein_abundances_long, aes(x = Sample.Name, y = Abundance)) +
+  geom_boxplot() +
+  theme_light()
 ```
 
 
@@ -246,9 +252,8 @@ classifications <- c("Strain.Type", "Treatment", "Passage")
 
 for (classification in classifications) {
   create_heatmap(protein_mat = protein_mat,
-               annotation = T,
                metadata = metadata,
-               annotation_type = "single",
+               annotation = "single",
                heatmap_type = "z-score",
                z_score_type = "standard",
                color_palette = "viridis",
@@ -258,7 +263,8 @@ for (classification in classifications) {
                save_as = "png",
                plot_name = "default",
                heatmap_title = "All samples",
-               sample_name_size = 4)
+               sample_name_size = 4,
+               cluster_columns = F)
 }
 ```
 
@@ -277,7 +283,7 @@ for (treatment in treatments) {
   
   # Produce the heatmap - by Strain.Type
   create_heatmap(protein_mat = mat,
-                 annotation = T,
+                 annotation = "single",
                  metadata = meta,
                  heatmap_type = "z-score",
                  z_score_type = "standard",
@@ -286,13 +292,13 @@ for (treatment in treatments) {
                  metadata_column_for_sample_name = "Sample.Name",
                  location_to_save = paste(location_to_save, "Output/Plots/heatmaps/", sep=""),
                  save_as = "png",
-                 plot_name = "custom",
-                 custom_plot_name = paste("heatmap_z_score_standard_only_", treatment, "_annotated_by_Strain.Type", sep=""),
-                 heatmap_title = paste("Treatment group", treatment, sep=" "))
+                 plot_name = paste("heatmap_z_score_standard_only_", treatment, "_annotated_by_Strain.Type", sep=""),
+                 heatmap_title = paste("Treatment group", treatment, sep=" "),
+                 cluster_columns = F)
   
   # Produce the heatmap by passage
   create_heatmap(protein_mat = mat,
-                 annotation = T,
+                 annotation = "single",
                  metadata = meta,
                  heatmap_type = "z-score",
                  z_score_type = "standard",
@@ -301,13 +307,13 @@ for (treatment in treatments) {
                  metadata_column_for_sample_name = "Sample.Name",
                  location_to_save = paste(location_to_save, "Output/Plots/heatmaps/", sep=""),
                  save_as = "png",
-                 plot_name = "custom",
-                 custom_plot_name = paste("heatmap_z_score_standard_only_", treatment, "_annotated_by_Passage", sep=""),
-                 heatmap_title = paste("Treatment group", treatment, sep=" "))
+                 plot_name = paste("heatmap_z_score_standard_only_", treatment, "_annotated_by_Passage", sep=""),
+                 heatmap_title = paste("Treatment group", treatment, sep=" "),
+                 cluster_columns = F)
 }
 ```
 
-### 1.3.3. Let me actually separate this by Strain.Type_Passage
+### 1.3.3. Let me actually separate this by Strain.Type and Passage at the same time
 ```{r}
 treatments <- unique(metadata$Treatment)[!(unique(metadata$Treatment) %in% c("QC"))]
 
@@ -321,8 +327,7 @@ for (treatment in treatments) {
   
   # Produce the heatmap - by Strain.Type
   create_heatmap(protein_mat = mat,
-                 annotation = T,
-                 annotation_type = "double",
+                 annotation = "double",
                  metadata = meta,
                  heatmap_type = "z-score",
                  z_score_type = "standard",
@@ -333,10 +338,10 @@ for (treatment in treatments) {
                  metadata_column_for_sample_name = "Sample.Name",
                  location_to_save = paste(location_to_save, "Output/Plots/heatmaps/", sep=""),
                  save_as = "png",
-                 plot_name = "custom",
-                 custom_plot_name = paste("heatmap_z_score_standard_only_", treatment, "_annotated_by_Strain.Type_Passage", sep=""),
+                 plot_name = paste("heatmap_z_score_standard_only_", treatment, "_annotated_by_Strain.Type_Passage", sep=""),
                  heatmap_title = paste("Treatment group:", treatment, sep=" "),
-                 sample_name_size = 8)
+                 sample_name_size = 8,
+                 cluster_columns = F)
 }
 ```
 
@@ -381,16 +386,17 @@ do_pca(protein_mat,
 ### 1.5.1 Only for liquid - this seems to be the one we are going with from now on
 ```{r}
 # Grab only liquid treatment samples
-treatments <- unique(metadata$Treatment)[!(unique(metadata$Treatment) == "QC")]
 samples_to_select <- metadata$Sample.Name[metadata$Treatment == "Liquid"]
 temp_protein_mat <- protein_mat[, colnames(protein_mat) %in% samples_to_select]
 reference_strain <- unique(metadata$Strain.Name[metadata$Treatment == "Liquid" &
                                              metadata$Passage == 0 &
                                              metadata$Strain.Type == "Lab strain"])[1]
+metadata_subset <- metadata %>%
+  dplyr::filter(Sample.Name %in% samples_to_select)
 
 # Run differential expression analysis
 de_analysis_results <- de_analysis(raw_data = temp_protein_mat,
-                                   metadata = metadata,
+                                   metadata = metadata_subset,
                                    method = "limma",
                                    strain_name_column = "Strain.Name", 
                                    sample_name_column = "Sample.Name", 
@@ -405,6 +411,12 @@ write_json(da, path=paste(base_dir, "ToleranceEvo_Wenxi/Data/enrichment_analysis
 resp <- create_responsiveness_df(da,
                                  lfc_threshold = 1,
                                  alpha = 0.05)
+
+# Add other informative columns to resp df
+temp <- metadata %>%
+  dplyr::select(Strain.Name, Strain.Type, Treatment, Passage) %>%
+  dplyr::distinct(Strain.Name, .keep_all = T)
+resp <- left_join(resp, temp, by = "Strain.Name")
 ```
 
 ### 1.5.2. All strains together, using C0L as the reference - OLD, PROBABLY DELETE
@@ -463,7 +475,30 @@ resp_vs_C0P <- left_join(resp_vs_C0P, temp, by = "Strain.Name")
 
 
 ## 1.6. Boxplots for DE
-### 1.6.1. DE vs. C0L
+### 1.6.1. DE for liquid only, vs C0L
+```{r}
+# Per strain
+ggplot(data = resp, aes(x = Strain.Type, y = nDEP, group = Strain.Type, fill = Strain.Type)) +
+  geom_boxplot() +
+  geom_jitter(color="black", size=2, alpha=0.9) +
+  theme_light() +
+  xlab("Strain type") +
+  ylab("nDEP") +
+  labs(title = "Number of differentially expressed proteins vs. C0L",
+       subtitle = "By strain type")
+
+# Per passage
+ggplot(data = resp, aes(x = Passage, y = nDEP, group = Passage, fill = Passage)) +
+  geom_boxplot() +
+  geom_jitter(color="black", size=2, alpha=0.9) +
+  theme_light() +
+  xlab("Passage") +
+  ylab("nDEP") +
+  labs(title = "Number of differentially expressed proteins vs. C0L",
+       subtitle = "By passage")
+```
+
+### 1.6.2. DE vs. C0L - OLD, PROBABLY DELETE
 ```{r}
 # Per strain
 ggplot(data = resp_vs_C0L, aes(x = Strain.Type, y = nDEP, group = Strain.Type, fill = Strain.Type)) +
@@ -496,7 +531,7 @@ ggplot(data = resp_vs_C0L, aes(x = Treatment, y = nDEP, group = Treatment, fill 
        subtitle = "By treatment")
 ```
 
-### 1.6.2. DE vs. C0P
+### 1.6.3. DE vs. C0P - OLD, PROBABLY DELETE
 ```{r}
 # Per strain
 ggplot(data = resp_vs_C0P, aes(x = Strain.Type, y = nDEP, group = Strain.Type, fill = Strain.Type)) +
@@ -536,19 +571,35 @@ ggplot(data = resp_vs_C0P, aes(x = Treatment, y = nDEP, group = Treatment, fill 
 ```{r}
 # Load data
 phenotypic_data <- fread(paste(base_dir, "ToleranceEvo_Wenxi/Data/phenotypic_data/processed_phenotypic_data.tsv", sep = ""))
+phenotypic_data_all_passages <- fread(paste(base_dir, "ToleranceEvo_Wenxi/Data/phenotypic_data/processed_phenotypic_data_all_passages.tsv", sep = ""))
 
 # Histograms of RAD20 and FoG20
-ggplot(data = phenotypic_data, aes(x = RAD20)) + 
+## Throuhgout all passages
+ggplot(data = phenotypic_data_all_passages, aes(x = RAD20)) + 
   geom_histogram(col = "black", fill = "grey") +
   theme_light() +
   ylab("Number of strains") +
-  labs(title = "Strains in ToleranceEvo - small scale proteomics", 
+  labs(title = "Distribution of RAD20 across all strains", 
+       subtitle = "All passages")
+ggplot(data = phenotypic_data_all_passages, aes(x = FoG20)) + 
+  geom_histogram(col = "black", fill = "grey") +
+  theme_light() +
+  ylab("Number of strains") +
+  labs(title = "Distribution of FoG20 across all strains", 
+       subtitle = "All passages")
+
+## Through passages 0, 4 and 7
+ggplot(data = subset(phenotypic_data_all_passages, Passage %in% c(0, 4, 7)), aes(x = RAD20)) + 
+  geom_histogram(col = "black", fill = "grey") +
+  theme_light() +
+  ylab("Number of strains") +
+  labs(title = "Distribution of RAD20 across all strains", 
        subtitle = "Passages 0, 4 and 7")
-ggplot(data = phenotypic_data, aes(x = FoG20)) + 
+ggplot(data = subset(phenotypic_data_all_passages, Passage %in% c(0, 4, 7)), aes(x = FoG20)) + 
   geom_histogram(col = "black", fill = "grey") +
   theme_light() +
   ylab("Number of strains") +
-  labs(title = "Strains in ToleranceEvo - small scale proteomics", 
+  labs(title = "Distribution of FoG20 across all strains", 
        subtitle = "Passages 0, 4 and 7")
 
 # Boxplots of RAD20 and FoG20s grouping by other variables
@@ -574,15 +625,183 @@ ggplot(data = phenotypic_data, aes(x = RAD20, y = FoG20, col = Passage)) +
   theme_light()
 ```
 
-## 2.2. Classify strains into high, medium or low tolerance and resistance based on these plots, in order to interpret proteomics results based on this
+## 2.2. Classify strains into high, medium or low tolerance and resistance based on these plots, in order to interpret proteomics results based on this. We add this as a new column to the metadata. Current thresholds for classification come from Wenxi but we are not confident on them at all, will show this in the microbiology meeting and see what people think about them. 
 ```{r}
+# Come up with the values
+phenotypic_data <- phenotypic_data %>%
+  dplyr::mutate(Resistance = case_when(RAD20 <= 9 ~ "High",
+                                       RAD20 > 9 & RAD20 <= 12 ~ "Medium",
+                                       RAD20 > 12 ~ "Low"),
+                Tolerance = case_when(FoG20 <= 0.1 ~ "Low",
+                                      FoG20 > 0.1 & FoG20 <= 0.25 ~ "Medium",
+                                      FoG20 > 0.25 ~ "High"),
+                Resistance_Tolerance = paste(Resistance, Tolerance, sep="_"))
 
+# Add these new variables to the metadata
+temp <- phenotypic_data %>%
+  dplyr::select(Sample.Name, RAD20, FoG20, Resistance, Tolerance, Resistance_Tolerance)
+metadata <- left_join(metadata, temp, by = "Sample.Name")
 ```
 
 ## 2.3. Heatmaps - informed by resistance and tolerance levels
+### 2.3.1. All samples together
 ```{r}
+# By resistance
+create_heatmap(protein_mat = protein_mat,
+             metadata = metadata,
+             annotation = "single",
+             heatmap_type = "z-score",
+             z_score_type = "standard",
+             color_palette = "viridis",
+             metadata_column_for_annotation = "Resistance",
+             metadata_column_for_sample_name = "Sample.Name",
+             location_to_save = paste(location_to_save, "Output/Plots/heatmaps/", sep=""),
+             save_as = "png",
+             plot_name = "default",
+             heatmap_title = "All samples",
+             sample_name_size = 4,
+             cluster_columns = F)
 
+# By tolerance
+create_heatmap(protein_mat = protein_mat,
+             metadata = metadata,
+             annotation = "single",
+             heatmap_type = "z-score",
+             z_score_type = "standard",
+             color_palette = "viridis",
+             metadata_column_for_annotation = "Tolerance",
+             metadata_column_for_sample_name = "Sample.Name",
+             location_to_save = paste(location_to_save, "Output/Plots/heatmaps/", sep=""),
+             save_as = "png",
+             plot_name = "default",
+             heatmap_title = "All samples",
+             sample_name_size = 4,
+             cluster_columns = F)
+
+# By resistance and tolerance together
+create_heatmap(protein_mat = protein_mat,
+             metadata = metadata,
+             annotation = "single",
+             heatmap_type = "z-score",
+             z_score_type = "standard",
+             color_palette = "viridis",
+             metadata_column_for_annotation = "Resistance_Tolerance",
+             metadata_column_for_sample_name = "Sample.Name",
+             location_to_save = paste(location_to_save, "Output/Plots/heatmaps/", sep=""),
+             save_as = "png",
+             plot_name = "default",
+             heatmap_title = "All samples",
+             sample_name_size = 4,
+             cluster_columns = F)
+
+# By RAD20
+create_heatmap(protein_mat = protein_mat,
+             metadata = metadata,
+             annotation = "single",
+             heatmap_type = "z-score",
+             z_score_type = "standard",
+             color_palette = "viridis",
+             metadata_column_for_annotation = "RAD20",
+             metadata_column_for_sample_name = "Sample.Name",
+             location_to_save = paste(location_to_save, "Output/Plots/heatmaps/", sep=""),
+             save_as = "png",
+             plot_name = "default",
+             heatmap_title = "All samples",
+             sample_name_size = 4,
+             cluster_columns = F)
+
+# By FoG20
+create_heatmap(protein_mat = protein_mat,
+             metadata = metadata,
+             annotation = "single",
+             heatmap_type = "z-score",
+             z_score_type = "standard",
+             color_palette = "viridis",
+             metadata_column_for_annotation = "FoG20",
+             metadata_column_for_sample_name = "Sample.Name",
+             location_to_save = paste(location_to_save, "Output/Plots/heatmaps/", sep=""),
+             save_as = "png",
+             plot_name = "default",
+             heatmap_title = "All samples",
+             sample_name_size = 4,
+             cluster_columns = F)
 ```
+
+### 2.3.2. Separate by treatment groups
+```{r}
+treatments <- unique(metadata$Treatment)[!(unique(metadata$Treatment) %in% c("QC"))]
+
+for (treatment in treatments) {
+  # Subset the protein matrix to contain only the samples in this treatment group
+  samples_to_keep <- metadata$Sample.Name[metadata$Treatment == treatment]
+  mat <- protein_mat[, colnames(protein_mat) %in% samples_to_keep]
+  
+  # Subset the metadata
+  meta <- metadata[metadata$Sample.Name %in% samples_to_keep,]
+  
+  # Produce the heatmap - by Resistance
+  create_heatmap(protein_mat = mat,
+                 annotation = "single",
+                 metadata = meta,
+                 heatmap_type = "z-score",
+                 z_score_type = "standard",
+                 color_palette = "viridis",
+                 metadata_column_for_annotation = "Resistance",
+                 metadata_column_for_sample_name = "Sample.Name",
+                 location_to_save = paste(location_to_save, "Output/Plots/heatmaps/", sep=""),
+                 save_as = "png",
+                 plot_name = paste("heatmap_z_score_standard_only_", treatment, "_annotated_by_Resistance", sep=""),
+                 heatmap_title = paste("Treatment group", treatment, sep=" "),
+                 cluster_columns = F)
+  
+  # Produce the heatmap - by Tolerance
+  create_heatmap(protein_mat = mat,
+                 annotation = "single",
+                 metadata = meta,
+                 heatmap_type = "z-score",
+                 z_score_type = "standard",
+                 color_palette = "viridis",
+                 metadata_column_for_annotation = "Tolerance",
+                 metadata_column_for_sample_name = "Sample.Name",
+                 location_to_save = paste(location_to_save, "Output/Plots/heatmaps/", sep=""),
+                 save_as = "png",
+                 plot_name = paste("heatmap_z_score_standard_only_", treatment, "_annotated_by_Tolerance", sep=""),
+                 heatmap_title = paste("Treatment group", treatment, sep=" "),
+                 cluster_columns = F)
+  
+  # Produce the heatmap - by RAD20
+  create_heatmap(protein_mat = mat,
+                 annotation = "single",
+                 metadata = meta,
+                 heatmap_type = "z-score",
+                 z_score_type = "standard",
+                 color_palette = "viridis",
+                 metadata_column_for_annotation = "RAD20",
+                 metadata_column_for_sample_name = "Sample.Name",
+                 location_to_save = paste(location_to_save, "Output/Plots/heatmaps/", sep=""),
+                 save_as = "png",
+                 plot_name = paste("heatmap_z_score_standard_only_", treatment, "_annotated_by_RAD20", sep=""),
+                 heatmap_title = paste("Treatment group", treatment, sep=" "),
+                 cluster_columns = F)
+  
+  # Produce the heatmap - by FoG20
+  create_heatmap(protein_mat = mat,
+                 annotation = "single",
+                 metadata = meta,
+                 heatmap_type = "z-score",
+                 z_score_type = "standard",
+                 color_palette = "viridis",
+                 metadata_column_for_annotation = "FoG20",
+                 metadata_column_for_sample_name = "Sample.Name",
+                 location_to_save = paste(location_to_save, "Output/Plots/heatmaps/", sep=""),
+                 save_as = "png",
+                 plot_name = paste("heatmap_z_score_standard_only_", treatment, "_annotated_by_FoG20", sep=""),
+                 heatmap_title = paste("Treatment group", treatment, sep=" "),
+                 cluster_columns = F)
+}
+```
+
+
 
 ## 2.4. PCA - colored by resistance and tolerance levels
 ```{r}
