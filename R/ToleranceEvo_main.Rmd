@@ -27,6 +27,9 @@ library(circlize)
 library(ComplexHeatmap)
 library(viridis)
 library(jsonlite)
+library(wesanderson)
+library(ggrepel)
+library(forcats)
 ```
 
 Set up
@@ -107,47 +110,47 @@ ggplot(data = prec_data_long, aes(x = Injection, y = Precursor.Normalized, group
 # 1. Differential expression analysis
 Performed with limpa. Filtering and pre-processing at the precursor level was done in the cluster, here I start from the processed (filtered, normalized, drift corrected, MAR-only imputed) data at precursor level in wide format (precursors in rows, samples in columns), summarize to protein level and perform DE analysis, both with limpa.
 
-## 1.1. Peptide to protein summarization
+## 1.1. Peptide to protein summarization - NOT USED AT THE MOMENT SINCE I ALREADY DID IT ONCE
 ```{r}
-# Prepare protein ID vector matching the precursor order in the rows of the raw data, setting the order based on that of the rows of the precursor raw data
-precursor_protein_correspondence <- precursor_protein_correspondence %>%
-  dplyr::filter(Precursor.Id %in% rownames(raw_prec_data))
-precursor_protein_correspondence <- precursor_protein_correspondence[match(rownames(raw_prec_data), precursor_protein_correspondence$Precursor.Id),]
-
-
-# Remove QC samples
-raw_prec_data <- raw_prec_data[, !(grepl("QC", colnames(raw_prec_data)))]
-
-# Run summarization
-summarization_results <- protein_summarize(raw_data = raw_prec_data,
-                                 protein_ids = precursor_protein_correspondence$Protein.Ids,
-                                 method = "limpa")
-protein_mat <- summarization_results$y.protein$E
-
-# Remove proteins which are present in less than 65% of the samples per strain - NOT NECESSARY RIGHT NOW SINCE I'M USING FULLY IMPUTED DATASET
-#protein_mat <- as.data.frame(protein_mat)
-#protein_mat$Precursor.Id <- rownames(protein_mat)
-#protein_mat <- pivot_longer(protein_mat,                                                  # Switch to longer format for filtering
-#                                 cols = !Precursor.Id,
-#                                 names_to = "Strain.Name",
-#                                 values_to = "Protein.Intensity") %>%
-#  dplyr::filter(!is.na(Protein.Intensity)) %>%                                            # Remove rows with NAs, otherwise this filtering doesn't work (it's based on the     #                                                                                          row being present or not, not on its contents)
-#  remove_uncommon_precursors_per_strain(percentage_of_samples_per_precursor = 0.65) %>%   # Filter
-#  pivot_wider(names_from = "Strain.Name",                                                 # Set back to wide format
-#              values_from = "Protein.Intensity") %>%
-#  as.data.frame() %>%
-#  set_column_as_rownames("Precursor.Id") 
-#sum(is.na(protein_mat))
-#sum(is.na(protein_mat))/(ncol(protein_mat)*nrow(protein_mat))
-
-# Save protein level dataset
-saveRDS(summarization_results, paste(base_dir, "ToleranceEvo_Wenxi/Data/Preprocessing_steps/protein_summarized_fully_imputed.rds", sep = ""))
-
-# Quickly look at the distribution of the protein abundances
-protein_abundances_long <- pivot_longer(as.data.frame(protein_mat), cols = everything(), names_to = "Sample.Name", values_to = "Abundance")
-ggplot(data = protein_abundances_long, aes(x = Sample.Name, y = Abundance)) +
-  geom_boxplot() +
-  theme_light()
+## Prepare protein ID vector matching the precursor order in the rows of the raw data, setting the order based on that of the rows of the precursor raw #data
+#precursor_protein_correspondence <- precursor_protein_correspondence %>%
+#  dplyr::filter(Precursor.Id %in% rownames(raw_prec_data))
+#precursor_protein_correspondence <- precursor_protein_correspondence[match(rownames(raw_prec_data), precursor_protein_correspondence$Precursor.Id),]
+#
+#
+## Remove QC samples
+#raw_prec_data <- raw_prec_data[, !(grepl("QC", colnames(raw_prec_data)))]
+#
+## Run summarization
+#summarization_results <- protein_summarize(raw_data = raw_prec_data,
+#                                 protein_ids = precursor_protein_correspondence$Protein.Ids,
+#                                 method = "limpa")
+#protein_mat <- summarization_results$y.protein$E
+#
+## Remove proteins which are present in less than 65% of the samples per strain - NOT NECESSARY RIGHT NOW SINCE I'M USING FULLY IMPUTED DATASET
+##protein_mat <- as.data.frame(protein_mat)
+##protein_mat$Precursor.Id <- rownames(protein_mat)
+##protein_mat <- pivot_longer(protein_mat,                                                  # Switch to longer format for filtering
+##                                 cols = !Precursor.Id,
+##                                 names_to = "Strain.Name",
+##                                 values_to = "Protein.Intensity") %>%
+##  dplyr::filter(!is.na(Protein.Intensity)) %>%                                            # Remove rows with NAs, otherwise this filtering doesn't work #(it's based on the     #                                                                                          row being present or not, not on its #contents)
+##  remove_uncommon_precursors_per_strain(percentage_of_samples_per_precursor = 0.65) %>%   # Filter
+##  pivot_wider(names_from = "Strain.Name",                                                 # Set back to wide format
+##              values_from = "Protein.Intensity") %>%
+##  as.data.frame() %>%
+##  set_column_as_rownames("Precursor.Id") 
+##sum(is.na(protein_mat))
+##sum(is.na(protein_mat))/(ncol(protein_mat)*nrow(protein_mat))
+#
+## Save protein level dataset
+#saveRDS(summarization_results, paste(base_dir, "ToleranceEvo_Wenxi/Data/Preprocessing_steps/protein_summarized_fully_imputed.rds", sep = ""))
+#
+## Quickly look at the distribution of the protein abundances
+#protein_abundances_long <- pivot_longer(as.data.frame(protein_mat), cols = everything(), names_to = "Sample.Name", values_to = "Abundance")
+#ggplot(data = protein_abundances_long, aes(x = Sample.Name, y = Abundance)) +
+#  geom_boxplot() +
+#  theme_light()
 ```
 
 
@@ -235,12 +238,12 @@ rotate_pdf(
 )
 ```
 
-Filter out proteins with low variability, towards the heatmaps
+Filter out proteins with low variability, towards the heatmaps - NOT USED AT THE MOMENT
 ```{r}
-protein_variability <- apply(protein_mat, 1, function(x) var(x, na.rm = T))
-hist(protein_variability)
-most_variable_proteins <- rownames(protein_mat)[protein_variability > 0.4]
-trna_ko_high_var <- protein_mat[rownames(protein_mat) %in% most_variable_proteins,]
+#protein_variability <- apply(protein_mat, 1, function(x) var(x, na.rm = T))
+#hist(protein_variability)
+#most_variable_proteins <- rownames(protein_mat)[protein_variability > 0.4]
+#trna_ko_high_var <- protein_mat[rownames(protein_mat) %in% most_variable_proteins,]
 ```
 
 
@@ -294,7 +297,8 @@ for (treatment in treatments) {
                  save_as = "png",
                  plot_name = paste("heatmap_z_score_standard_only_", treatment, "_annotated_by_Strain.Type", sep=""),
                  heatmap_title = paste("Treatment group", treatment, sep=" "),
-                 cluster_columns = F)
+                 cluster_columns = F,
+                 sample_name_size = 4)
   
   # Produce the heatmap by passage
   create_heatmap(protein_mat = mat,
@@ -309,7 +313,8 @@ for (treatment in treatments) {
                  save_as = "png",
                  plot_name = paste("heatmap_z_score_standard_only_", treatment, "_annotated_by_Passage", sep=""),
                  heatmap_title = paste("Treatment group", treatment, sep=" "),
-                 cluster_columns = F)
+                 cluster_columns = F,
+                 sample_name_size = 4)
 }
 ```
 
@@ -382,189 +387,6 @@ do_pca(protein_mat,
 ```
 
 
-## 1.5. Differential expression analysis
-### 1.5.1 Only for liquid - this seems to be the one we are going with from now on
-```{r}
-# Grab only liquid treatment samples
-samples_to_select <- metadata$Sample.Name[metadata$Treatment == "Liquid"]
-temp_protein_mat <- protein_mat[, colnames(protein_mat) %in% samples_to_select]
-reference_strain <- unique(metadata$Strain.Name[metadata$Treatment == "Liquid" &
-                                             metadata$Passage == 0 &
-                                             metadata$Strain.Type == "Lab strain"])[1]
-metadata_subset <- metadata %>%
-  dplyr::filter(Sample.Name %in% samples_to_select)
-
-# Run differential expression analysis
-de_analysis_results <- de_analysis(raw_data = temp_protein_mat,
-                                   metadata = metadata_subset,
-                                   method = "limma",
-                                   strain_name_column = "Strain.Name", 
-                                   sample_name_column = "Sample.Name", 
-                                   reference_strain = reference_strain,
-                                   N = 10,
-                                   lfc_threshold = 0.5,
-                                   alpha = 0.05)
-da <- de_analysis_results$DE_df
-write_json(da, path=paste(base_dir, "ToleranceEvo_Wenxi/Data/enrichment_analysis/da_", alpha_plain, "_logFC_", as.character(lfc_threshold), ".json", sep=""), pretty = T)
-
-# Get responsiveness df
-resp <- create_responsiveness_df(da,
-                                 lfc_threshold = 1,
-                                 alpha = 0.05)
-
-# Add other informative columns to resp df
-temp <- metadata %>%
-  dplyr::select(Strain.Name, Strain.Type, Treatment, Passage) %>%
-  dplyr::distinct(Strain.Name, .keep_all = T)
-resp <- left_join(resp, temp, by = "Strain.Name")
-```
-
-### 1.5.2. All strains together, using C0L as the reference - OLD, PROBABLY DELETE
-Decided to use this one because it's the lab strain, at passage 0, and in liquid because it's supposed to have had a bit more time to grow than the solid one
-```{r}
-# Main DE analysis - produces the da dataframe
-de_analysis_results_vs_C0L <- de_analysis(raw_data = summarization_results$y.protein,
-                                   metadata = metadata,
-                                   method = "limpa",
-                                   strain_name_column = "Strain.Name", 
-                                   sample_name_column = "Sample.Name", 
-                                   reference_strain = "C0L",
-                                   N = 10,
-                                   lfc_threshold = 1,
-                                   alpha = 0.05)
-da_vs_C0L <- de_analysis_results_vs_C0L$DE_df
-
-# From the da dataframe, create responsiveness dataframe, summarize DEPs per strain
-resp_vs_C0L <- create_responsiveness_df(da = da_vs_C0L,
-                                        alpha = 0.05,
-                                        lfc_threshold = 1)
-
-# Add other informative columns to resp df
-temp <- metadata %>%
-  dplyr::select(Strain.Name, Strain.Type, Treatment, Passage) %>%
-  dplyr::distinct(Strain.Name, .keep_all = T)
-resp_vs_C0L <- left_join(resp_vs_C0L, temp, by = "Strain.Name")
-```
-
-### 1.5.3. All strains together, using C0P as the reference - OLD, PROBABLY DELETE
-When using C0L as reference, I saw DEPs only in pellet and liquid+fluconazole, pointing towards the fact that it is the treatment that drives the proteome, not the strain nor the passage
-```{r}
-# Main DE analysis - produces the da dataframe
-de_analysis_results_vs_C0P <- de_analysis(raw_data = summarization_results$y.protein,
-                                   metadata = metadata,
-                                   method = "limpa",
-                                   strain_name_column = "Strain.Name", 
-                                   sample_name_column = "Sample.Name", 
-                                   reference_strain = "C0P",
-                                   N = 10,
-                                   lfc_threshold = 1,
-                                   alpha = 0.05)
-da_vs_C0P <- de_analysis_results_vs_C0P$DE_df
-
-# From the da dataframe, create responsiveness dataframe, summarize DEPs per strain
-resp_vs_C0P <- create_responsiveness_df(da = da_vs_C0P,
-                                        alpha = 0.05,
-                                        lfc_threshold = 1)
-
-# Add other informative columns to resp df
-temp <- metadata %>%
-  dplyr::select(Strain.Name, Strain.Type, Treatment, Passage) %>%
-  dplyr::distinct(Strain.Name, .keep_all = T)
-resp_vs_C0P <- left_join(resp_vs_C0P, temp, by = "Strain.Name")
-```
-
-
-## 1.6. Boxplots for DE
-### 1.6.1. DE for liquid only, vs C0L
-```{r}
-# Per strain
-ggplot(data = resp, aes(x = Strain.Type, y = nDEP, group = Strain.Type, fill = Strain.Type)) +
-  geom_boxplot() +
-  geom_jitter(color="black", size=2, alpha=0.9) +
-  theme_light() +
-  xlab("Strain type") +
-  ylab("nDEP") +
-  labs(title = "Number of differentially expressed proteins vs. C0L",
-       subtitle = "By strain type")
-
-# Per passage
-ggplot(data = resp, aes(x = Passage, y = nDEP, group = Passage, fill = Passage)) +
-  geom_boxplot() +
-  geom_jitter(color="black", size=2, alpha=0.9) +
-  theme_light() +
-  xlab("Passage") +
-  ylab("nDEP") +
-  labs(title = "Number of differentially expressed proteins vs. C0L",
-       subtitle = "By passage")
-```
-
-### 1.6.2. DE vs. C0L - OLD, PROBABLY DELETE
-```{r}
-# Per strain
-ggplot(data = resp_vs_C0L, aes(x = Strain.Type, y = nDEP, group = Strain.Type, fill = Strain.Type)) +
-  geom_boxplot() +
-  geom_jitter(color="black", size=2, alpha=0.9) +
-  theme_light() +
-  xlab("Strain type") +
-  ylab("nDEP") +
-  labs(title = "Number of differentially expressed proteins vs. C0L",
-       subtitle = "By strain type")
-
-# Per passage
-ggplot(data = resp_vs_C0L, aes(x = Passage, y = nDEP, group = Passage, fill = Passage)) +
-  geom_boxplot() +
-  geom_jitter(color="black", size=2, alpha=0.9) +
-  theme_light() +
-  xlab("Passage") +
-  ylab("nDEP") +
-  labs(title = "Number of differentially expressed proteins vs. C0L",
-       subtitle = "By passage")
-
-# Per treatment
-ggplot(data = resp_vs_C0L, aes(x = Treatment, y = nDEP, group = Treatment, fill = Treatment)) +
-  geom_boxplot() +
-  geom_jitter(color="black", size=2, alpha=0.9) +
-  theme_light() +
-  xlab("Treatment") +
-  ylab("nDEP") +
-  labs(title = "Number of differentially expressed proteins vs. C0L",
-       subtitle = "By treatment")
-```
-
-### 1.6.3. DE vs. C0P - OLD, PROBABLY DELETE
-```{r}
-# Per strain
-ggplot(data = resp_vs_C0P, aes(x = Strain.Type, y = nDEP, group = Strain.Type, fill = Strain.Type)) +
-  geom_boxplot() +
-  geom_jitter(color="black", size=2, alpha=0.9) +
-  theme_light() +
-  xlab("Strain type") +
-  ylab("nDEP") +
-  labs(title = "Number of differentially expressed proteins vs. C0P",
-       subtitle = "By strain type")
-
-# Per passage
-ggplot(data = resp_vs_C0P, aes(x = Passage, y = nDEP, group = Passage, fill = Passage)) +
-  geom_boxplot() +
-  geom_jitter(color="black", size=2, alpha=0.9) +
-  theme_light() +
-  xlab("Passage") +
-  ylab("nDEP") +
-  labs(title = "Number of differentially expressed proteins vs. C0P",
-       subtitle = "By passage")
-
-# Per treatment
-ggplot(data = resp_vs_C0P, aes(x = Treatment, y = nDEP, group = Treatment, fill = Treatment)) +
-  geom_boxplot() +
-  geom_jitter(color="black", size=2, alpha=0.9) +
-  theme_light() +
-  xlab("Treatment") +
-  ylab("nDEP") +
-  labs(title = "Number of differentially expressed proteins vs. C0P",
-       subtitle = "By treatment")
-```
-
-
 
 # 2. Introduce phenotypic data
 ## 2.1. Some initial plots of the tolerance and resistance
@@ -580,13 +402,17 @@ ggplot(data = phenotypic_data_all_passages, aes(x = RAD20)) +
   theme_light() +
   ylab("Number of strains") +
   labs(title = "Distribution of RAD20 across all strains", 
-       subtitle = "All passages")
+       subtitle = "All passages") +
+  coord_cartesian(xlim = c(3, 16),
+                  ylim = c(0, 12.5))
 ggplot(data = phenotypic_data_all_passages, aes(x = FoG20)) + 
   geom_histogram(col = "black", fill = "grey") +
   theme_light() +
   ylab("Number of strains") +
   labs(title = "Distribution of FoG20 across all strains", 
-       subtitle = "All passages")
+       subtitle = "All passages") +
+  coord_cartesian(xlim = c(0, 1),
+                  ylim = c(0, 30))
 
 ## Through passages 0, 4 and 7
 ggplot(data = subset(phenotypic_data_all_passages, Passage %in% c(0, 4, 7)), aes(x = RAD20)) + 
@@ -594,13 +420,17 @@ ggplot(data = subset(phenotypic_data_all_passages, Passage %in% c(0, 4, 7)), aes
   theme_light() +
   ylab("Number of strains") +
   labs(title = "Distribution of RAD20 across all strains", 
-       subtitle = "Passages 0, 4 and 7")
+       subtitle = "Passages 0, 4 and 7") +
+  coord_cartesian(xlim = c(3, 16),
+                  ylim = c(0, 12.5))
 ggplot(data = subset(phenotypic_data_all_passages, Passage %in% c(0, 4, 7)), aes(x = FoG20)) + 
   geom_histogram(col = "black", fill = "grey") +
   theme_light() +
   ylab("Number of strains") +
   labs(title = "Distribution of FoG20 across all strains", 
-       subtitle = "Passages 0, 4 and 7")
+       subtitle = "Passages 0, 4 and 7") +
+  coord_cartesian(xlim = c(0, 1),
+                  ylim = c(0, 30))
 
 # Boxplots of RAD20 and FoG20s grouping by other variables
 ggplot(data = phenotypic_data, aes(x = Strain.Type, y = RAD20, group = Strain.Type)) +
@@ -623,79 +453,57 @@ ggplot(data = phenotypic_data, aes(x = RAD20, y = FoG20, col = Strain.Type)) +
 ggplot(data = phenotypic_data, aes(x = RAD20, y = FoG20, col = Passage)) +
   geom_point() +
   theme_light()
+
+
+# Correlation between Passage and RAD20, and FoG20
+cor(phenotypic_data_all_passages$Passage, phenotypic_data_all_passages$RAD20)
+cor(phenotypic_data_all_passages$Passage, phenotypic_data_all_passages$FoG20)
+
+# Repeat these correlations, separately for each of the strains - TODO: instead of printing these values, put them into a dataframe and create a barplot!
+strain_types <- unique(phenotypic_data_all_passages$Strain.Type)
+Strain <- c()
+Parameter <- c()
+Correlation <- c()
+
+for (i in 1:length(strain_types)) {
+  strain_type <- strain_types[i]
+  temp <- phenotypic_data_all_passages %>%
+    dplyr::filter(Strain.Type == strain_type)
+  
+  for (parameter in c("RAD20", "FoG20")) {
+    Strain <- c(Strain, strain_type)
+    Parameter <- c(Parameter, parameter)
+    Correlation <- c(Correlation, abs(cor(temp$Passage, temp[[parameter]])))
+  }
+}
+
+correlations_to_passage <- data.frame(Strain, Parameter, Correlation)
+
+ggplot(correlations_to_passage, aes(x = Parameter, y = Correlation, fill = Strain)) +
+  geom_col(position = "dodge", col = "grey") +
+  theme_light() +
+  coord_cartesian(ylim = c(0, 1)) +
+  labs(title = "Correlation between passage and tolerance or resistance") +
+  #scale_fill_viridis_d(option = "mako")
+  scale_fill_manual(values= wes_palette("FantasticFox1", n = 3))
 ```
 
-## 2.2. Classify strains into high, medium or low tolerance and resistance based on these plots, in order to interpret proteomics results based on this. We add this as a new column to the metadata. Current thresholds for classification come from Wenxi but we are not confident on them at all, will show this in the microbiology meeting and see what people think about them. 
-```{r}
-# Come up with the values
-phenotypic_data <- phenotypic_data %>%
-  dplyr::mutate(Resistance = case_when(RAD20 <= 9 ~ "High",
-                                       RAD20 > 9 & RAD20 <= 12 ~ "Medium",
-                                       RAD20 > 12 ~ "Low"),
-                Tolerance = case_when(FoG20 <= 0.1 ~ "Low",
-                                      FoG20 > 0.1 & FoG20 <= 0.25 ~ "Medium",
-                                      FoG20 > 0.25 ~ "High"),
-                Resistance_Tolerance = paste(Resistance, Tolerance, sep="_"))
 
-# Add these new variables to the metadata
+## 2.2. Heatmaps - informed by resistance and tolerance levels
+### 2.3.1. First of all, add RAD20 and FoG20 to the metadata
+```{r}
 temp <- phenotypic_data %>%
-  dplyr::select(Sample.Name, RAD20, FoG20, Resistance, Tolerance, Resistance_Tolerance)
+  dplyr::select(Sample.Name, RAD20, FoG20)
 metadata <- left_join(metadata, temp, by = "Sample.Name")
 ```
 
-## 2.3. Heatmaps - informed by resistance and tolerance levels
-### 2.3.1. All samples together
+### 2.2.2. All samples together
 ```{r}
-# By resistance
-create_heatmap(protein_mat = protein_mat,
-             metadata = metadata,
-             annotation = "single",
-             heatmap_type = "z-score",
-             z_score_type = "standard",
-             color_palette = "viridis",
-             metadata_column_for_annotation = "Resistance",
-             metadata_column_for_sample_name = "Sample.Name",
-             location_to_save = paste(location_to_save, "Output/Plots/heatmaps/", sep=""),
-             save_as = "png",
-             plot_name = "default",
-             heatmap_title = "All samples",
-             sample_name_size = 4,
-             cluster_columns = F)
-
-# By tolerance
-create_heatmap(protein_mat = protein_mat,
-             metadata = metadata,
-             annotation = "single",
-             heatmap_type = "z-score",
-             z_score_type = "standard",
-             color_palette = "viridis",
-             metadata_column_for_annotation = "Tolerance",
-             metadata_column_for_sample_name = "Sample.Name",
-             location_to_save = paste(location_to_save, "Output/Plots/heatmaps/", sep=""),
-             save_as = "png",
-             plot_name = "default",
-             heatmap_title = "All samples",
-             sample_name_size = 4,
-             cluster_columns = F)
-
-# By resistance and tolerance together
-create_heatmap(protein_mat = protein_mat,
-             metadata = metadata,
-             annotation = "single",
-             heatmap_type = "z-score",
-             z_score_type = "standard",
-             color_palette = "viridis",
-             metadata_column_for_annotation = "Resistance_Tolerance",
-             metadata_column_for_sample_name = "Sample.Name",
-             location_to_save = paste(location_to_save, "Output/Plots/heatmaps/", sep=""),
-             save_as = "png",
-             plot_name = "default",
-             heatmap_title = "All samples",
-             sample_name_size = 4,
-             cluster_columns = F)
+# Don't know why I didn't have this issue before, but need to remove QCs first (otherwise there are NAs in the annotation column)
+protein_mat_no_QCs <- protein_mat[, !grepl("QC", colnames(protein_mat))]
 
 # By RAD20
-create_heatmap(protein_mat = protein_mat,
+create_heatmap(protein_mat = protein_mat_no_QCs,
              metadata = metadata,
              annotation = "single",
              heatmap_type = "z-score",
@@ -703,7 +511,7 @@ create_heatmap(protein_mat = protein_mat,
              color_palette = "viridis",
              metadata_column_for_annotation = "RAD20",
              metadata_column_for_sample_name = "Sample.Name",
-             location_to_save = paste(location_to_save, "Output/Plots/heatmaps/", sep=""),
+             location_to_save = paste(location_to_save, "Output/Plots/heatmaps/phenotypic/", sep=""),
              save_as = "png",
              plot_name = "default",
              heatmap_title = "All samples",
@@ -711,7 +519,7 @@ create_heatmap(protein_mat = protein_mat,
              cluster_columns = F)
 
 # By FoG20
-create_heatmap(protein_mat = protein_mat,
+create_heatmap(protein_mat = protein_mat_no_QCs,
              metadata = metadata,
              annotation = "single",
              heatmap_type = "z-score",
@@ -719,7 +527,7 @@ create_heatmap(protein_mat = protein_mat,
              color_palette = "viridis",
              metadata_column_for_annotation = "FoG20",
              metadata_column_for_sample_name = "Sample.Name",
-             location_to_save = paste(location_to_save, "Output/Plots/heatmaps/", sep=""),
+             location_to_save = paste(location_to_save, "Output/Plots/heatmaps/phenotypic/", sep=""),
              save_as = "png",
              plot_name = "default",
              heatmap_title = "All samples",
@@ -727,7 +535,7 @@ create_heatmap(protein_mat = protein_mat,
              cluster_columns = F)
 ```
 
-### 2.3.2. Separate by treatment groups
+### 2.2.3. Separate by treatment groups
 ```{r}
 treatments <- unique(metadata$Treatment)[!(unique(metadata$Treatment) %in% c("QC"))]
 
@@ -739,36 +547,6 @@ for (treatment in treatments) {
   # Subset the metadata
   meta <- metadata[metadata$Sample.Name %in% samples_to_keep,]
   
-  # Produce the heatmap - by Resistance
-  create_heatmap(protein_mat = mat,
-                 annotation = "single",
-                 metadata = meta,
-                 heatmap_type = "z-score",
-                 z_score_type = "standard",
-                 color_palette = "viridis",
-                 metadata_column_for_annotation = "Resistance",
-                 metadata_column_for_sample_name = "Sample.Name",
-                 location_to_save = paste(location_to_save, "Output/Plots/heatmaps/", sep=""),
-                 save_as = "png",
-                 plot_name = paste("heatmap_z_score_standard_only_", treatment, "_annotated_by_Resistance", sep=""),
-                 heatmap_title = paste("Treatment group", treatment, sep=" "),
-                 cluster_columns = F)
-  
-  # Produce the heatmap - by Tolerance
-  create_heatmap(protein_mat = mat,
-                 annotation = "single",
-                 metadata = meta,
-                 heatmap_type = "z-score",
-                 z_score_type = "standard",
-                 color_palette = "viridis",
-                 metadata_column_for_annotation = "Tolerance",
-                 metadata_column_for_sample_name = "Sample.Name",
-                 location_to_save = paste(location_to_save, "Output/Plots/heatmaps/", sep=""),
-                 save_as = "png",
-                 plot_name = paste("heatmap_z_score_standard_only_", treatment, "_annotated_by_Tolerance", sep=""),
-                 heatmap_title = paste("Treatment group", treatment, sep=" "),
-                 cluster_columns = F)
-  
   # Produce the heatmap - by RAD20
   create_heatmap(protein_mat = mat,
                  annotation = "single",
@@ -778,11 +556,12 @@ for (treatment in treatments) {
                  color_palette = "viridis",
                  metadata_column_for_annotation = "RAD20",
                  metadata_column_for_sample_name = "Sample.Name",
-                 location_to_save = paste(location_to_save, "Output/Plots/heatmaps/", sep=""),
+                 location_to_save = paste(location_to_save, "Output/Plots/heatmaps/phenotypic/", sep=""),
                  save_as = "png",
                  plot_name = paste("heatmap_z_score_standard_only_", treatment, "_annotated_by_RAD20", sep=""),
                  heatmap_title = paste("Treatment group", treatment, sep=" "),
-                 cluster_columns = F)
+                 cluster_columns = F,
+                 sample_name_size = 4)
   
   # Produce the heatmap - by FoG20
   create_heatmap(protein_mat = mat,
@@ -793,25 +572,960 @@ for (treatment in treatments) {
                  color_palette = "viridis",
                  metadata_column_for_annotation = "FoG20",
                  metadata_column_for_sample_name = "Sample.Name",
-                 location_to_save = paste(location_to_save, "Output/Plots/heatmaps/", sep=""),
+                 location_to_save = paste(location_to_save, "Output/Plots/heatmaps/phenotypic/", sep=""),
                  save_as = "png",
                  plot_name = paste("heatmap_z_score_standard_only_", treatment, "_annotated_by_FoG20", sep=""),
                  heatmap_title = paste("Treatment group", treatment, sep=" "),
-                 cluster_columns = F)
+                 cluster_columns = F,
+                 sample_name_size = 4)
+  
+    # Produce the heatmap - by RAD20 and passage
+  create_heatmap(protein_mat = mat,
+                 annotation = "double",
+                 metadata = meta,
+                 heatmap_type = "z-score",
+                 z_score_type = "standard",
+                 color_palette = "viridis",
+                 metadata_column_for_annotation = "Passage",
+                 metadata_column_for_annotation_2 = "RAD20",
+                 metadata_column_for_sample_name = "Sample.Name",
+                 location_to_save = paste(location_to_save, "Output/Plots/heatmaps/phenotypic/", sep=""),
+                 save_as = "png",
+                 plot_name = paste("heatmap_z_score_standard_only_", treatment, "_annotated_by_RAD20_and_passage", sep=""),
+                 heatmap_title = paste("Treatment group", treatment, sep=" "),
+                 cluster_columns = F,
+                 sample_name_size = 4)
+  
+  # Produce the heatmap - by FoG20 and passage
+  create_heatmap(protein_mat = mat,
+                 annotation = "double",
+                 metadata = meta,
+                 heatmap_type = "z-score",
+                 z_score_type = "standard",
+                 color_palette = "viridis",
+                 metadata_column_for_annotation = "Passage",
+                 metadata_column_for_annotation_2 = "FoG20",
+                 metadata_column_for_sample_name = "Sample.Name",
+                 location_to_save = paste(location_to_save, "Output/Plots/heatmaps/phenotypic/", sep=""),
+                 save_as = "png",
+                 plot_name = paste("heatmap_z_score_standard_only_", treatment, "_annotated_by_FoG20_and_passage", sep=""),
+                 heatmap_title = paste("Treatment group", treatment, sep=" "),
+                 cluster_columns = F,
+                 sample_name_size = 4)
 }
 ```
 
 
-
-## 2.4. PCA - colored by resistance and tolerance levels
+## 2.3. Classify strains into high or low tolerance and resistance based on these heatmaps, in order to interpret proteomics results based on this. We add this as a new column to the metadata. Current thresholds for classification come from the heatmaps, not anymore from Wenxi. In any case, we are not confident on either of them at all, will show this in the microbiology meeting and see what people think about them. 
+Tbh I think that classifying them like this, taking into account how homogeneous the heatmaps look, is not a great idea, but oh well. 
 ```{r}
+# Come up with the values
+phenotypic_data <- phenotypic_data %>%
+  dplyr::mutate(Resistance = case_when(RAD20 <= 10.672 ~ "High",                # This is based on the heatmap for pellet annotated by RAD20
+                                       RAD20 > 10.672 ~ "Low"),
+                Tolerance = case_when(FoG20 <= 0.33 ~ "Low",                    # This is based on the heatmap for pellet annotated by FoG20 
+                                      FoG20 > 0.33 ~ "High"))
 
+# Add these new variables to the metadata
+temp <- phenotypic_data %>%
+  dplyr::select(Sample.Name, RAD20, FoG20, Resistance, Tolerance)
+metadata <- left_join(metadata, temp, by = "Sample.Name")
+``` 
+
+
+
+# 3. Differential expression analysis
+## 3.1. Perform DE analysis
+### 3.1.1. Pellet samples, high tolerance vs. low - no significance
+```{r}
+# Set up
+treatment <- "Pellet"
+parameter <- "Tolerance"
+
+# Grab only liquid treatment samples
+samples_to_select <- metadata$Sample.Name[metadata$Treatment == treatment]
+temp_protein_mat <- protein_mat[, colnames(protein_mat) %in% samples_to_select]
+reference_strain <- "Low"
+metadata_subset <- metadata %>%
+  dplyr::filter(Sample.Name %in% samples_to_select) %>%
+  dplyr::select(-Strain.Name) %>%
+  dplyr::rename(Strain.Name = parameter)
+
+# DELETE THIS PART - SAVE THE DATA JUST AS IT IS PROVIDED HERE, TO TEST THE DE_ANALYSIS FUNCTION
+saveRDS(temp_protein_mat, "/home/alvaro/MyStuff/temp_protein_mat.rds")
+saveRDS(metadata_subset, "/home/alvaro/MyStuff/metadata_subset.rds")
+
+# Run differential expression analysis
+de_analysis_results <- de_analysis(raw_data = temp_protein_mat,
+                                   metadata = metadata_subset,
+                                   method = "limma",
+                                   strain_name_column = "Strain.Name", 
+                                   sample_name_column = "Sample.Name", 
+                                   reference_strain = reference_strain,
+                                   N = 10,
+                                   lfc_threshold = 0.5,
+                                   alpha = 0.05)
+da <- de_analysis_results$DE_df
+write_json(da, path=paste(base_dir, "ToleranceEvo_Wenxi/Data/enrichment_analysis/da_", treatment, "_", parameter, "_", alpha_plain, "_logFC_", as.character(lfc_threshold), ".json", sep=""), pretty = T)
+
+# Get responsiveness df
+resp <- create_responsiveness_df(da,
+                                 lfc_threshold = 0.5,
+                                 alpha = 0.05)
+
+# Add other informative columns to resp df
+temp <- metadata %>%
+  dplyr::select(Strain.Name, Strain.Type, Treatment, Passage) %>%
+  dplyr::distinct(Strain.Name, .keep_all = T)
+resp <- left_join(resp, temp, by = "Strain.Name")
+
+
+# Histograms of logFC and p-values
+ggplot(data = da, aes(x = logFC)) +
+  geom_histogram(col = "black", fill = "grey") +
+  theme_light() +
+  labs(title = paste("logFCs for DEA by", parameter, sep=" "),
+       subtitle = paste("For", treatment, "samples", sep=" "))
+
+ggplot(data = da, aes(x = P.Value)) +
+  geom_histogram(col = "black", fill = "grey") +
+  theme_light() +
+  labs(title = paste("Raw p-values for DEA by", parameter, sep=" "),
+       subtitle = paste("For", treatment, "samples", sep=" "))
+
+ggplot(data = da, aes(x = adj.P.Val)) +
+  geom_histogram(col = "black", fill = "grey") +
+  theme_light() +
+  labs(title = paste("Adjusted p-values for DEA by", parameter, sep=" "),
+       subtitle = paste("For", treatment, "samples", sep=" "))
+```
+
+### 3.1.2. Pellet samples, high resistance vs. low - no significance
+```{r}
+# Set up
+treatment <- "Pellet"
+parameter <- "Resistance"
+
+# Grab only liquid treatment samples
+samples_to_select <- metadata$Sample.Name[metadata$Treatment == treatment]
+temp_protein_mat <- protein_mat[, colnames(protein_mat) %in% samples_to_select]
+reference_strain <- "Low"
+metadata_subset <- metadata %>%
+  dplyr::filter(Sample.Name %in% samples_to_select) %>%
+  dplyr::select(-Strain.Name) %>%
+  dplyr::rename(Strain.Name = parameter)
+
+# Run differential expression analysis
+de_analysis_results <- de_analysis(raw_data = temp_protein_mat,
+                                   metadata = metadata_subset,
+                                   method = "limma",
+                                   strain_name_column = "Strain.Name", 
+                                   sample_name_column = "Sample.Name", 
+                                   reference_strain = reference_strain,
+                                   N = 10,
+                                   lfc_threshold = 0.5,
+                                   alpha = 0.05)
+da <- de_analysis_results$DE_df
+write_json(da, path=paste(base_dir, "ToleranceEvo_Wenxi/Data/enrichment_analysis/da_", treatment, "_", parameter, "_", alpha_plain, "_logFC_", as.character(lfc_threshold), ".json", sep=""), pretty = T)
+
+# Get responsiveness df
+resp <- create_responsiveness_df(da,
+                                 lfc_threshold = 0.5,
+                                 alpha = 0.05)
+
+# Add other informative columns to resp df
+temp <- metadata %>%
+  dplyr::select(Strain.Name, Strain.Type, Treatment, Passage) %>%
+  dplyr::distinct(Strain.Name, .keep_all = T)
+resp <- left_join(resp, temp, by = "Strain.Name")
+
+# Histograms of logFC and p-values
+ggplot(data = da, aes(x = logFC)) +
+  geom_histogram(col = "black", fill = "grey") +
+  theme_light() +
+  labs(title = paste("logFCs for DEA by", parameter, sep=" "),
+       subtitle = paste("For", treatment, "samples", sep=" "))
+
+ggplot(data = da, aes(x = P.Value)) +
+  geom_histogram(col = "black", fill = "grey") +
+  theme_light() +
+  labs(title = paste("Raw p-values for DEA by", parameter, sep=" "),
+       subtitle = paste("For", treatment, "samples", sep=" "))
+
+ggplot(data = da, aes(x = adj.P.Val)) +
+  geom_histogram(col = "black", fill = "grey") +
+  theme_light() +
+  labs(title = paste("Adjusted p-values for DEA by", parameter, sep=" "),
+       subtitle = paste("For", treatment, "samples", sep=" "))
+```
+
+### 3.1.3. Liquid samples, high tolerance vs. low - no significance
+```{r}
+# Set up
+treatment <- "Liquid"
+parameter <- "Tolerance"
+
+# Grab only liquid treatment samples
+samples_to_select <- metadata$Sample.Name[metadata$Treatment == treatment]
+temp_protein_mat <- protein_mat[, colnames(protein_mat) %in% samples_to_select]
+reference_strain <- "Low"
+metadata_subset <- metadata %>%
+  dplyr::filter(Sample.Name %in% samples_to_select) %>%
+  dplyr::select(-Strain.Name) %>%
+  dplyr::rename(Strain.Name = parameter)
+
+# Run differential expression analysis
+de_analysis_results <- de_analysis(raw_data = temp_protein_mat,
+                                   metadata = metadata_subset,
+                                   method = "limma",
+                                   strain_name_column = "Strain.Name", 
+                                   sample_name_column = "Sample.Name", 
+                                   reference_strain = reference_strain,
+                                   N = 10,
+                                   lfc_threshold = 0.5,
+                                   alpha = 0.05)
+da <- de_analysis_results$DE_df
+write_json(da, path=paste(base_dir, "ToleranceEvo_Wenxi/Data/enrichment_analysis/da_", treatment, "_", parameter, "_", alpha_plain, "_logFC_", as.character(lfc_threshold), ".json", sep=""), pretty = T)
+
+# Get responsiveness df
+resp <- create_responsiveness_df(da,
+                                 lfc_threshold = 0.5,
+                                 alpha = 0.05)
+
+# Add other informative columns to resp df
+temp <- metadata %>%
+  dplyr::select(Strain.Name, Strain.Type, Treatment, Passage) %>%
+  dplyr::distinct(Strain.Name, .keep_all = T)
+resp <- left_join(resp, temp, by = "Strain.Name")
+
+# Histograms of logFC and p-values
+ggplot(data = da, aes(x = logFC)) +
+  geom_histogram(col = "black", fill = "grey") +
+  theme_light() +
+  labs(title = paste("logFCs for DEA by", parameter, sep=" "),
+       subtitle = paste("For", treatment, "samples", sep=" "))
+
+ggplot(data = da, aes(x = P.Value)) +
+  geom_histogram(col = "black", fill = "grey") +
+  theme_light() +
+  labs(title = paste("Raw p-values for DEA by", parameter, sep=" "),
+       subtitle = paste("For", treatment, "samples", sep=" "))
+
+ggplot(data = da, aes(x = adj.P.Val)) +
+  geom_histogram(col = "black", fill = "grey") +
+  theme_light() +
+  labs(title = paste("Adjusted p-values for DEA by", parameter, sep=" "),
+       subtitle = paste("For", treatment, "samples", sep=" "))
+```
+
+### 3.1.4. Liquid samples, high resistance vs. low - no significance
+```{r}
+# Set up
+treatment <- "Liquid"
+parameter <- "Resistance"
+
+# Grab only liquid treatment samples
+samples_to_select <- metadata$Sample.Name[metadata$Treatment == treatment]
+temp_protein_mat <- protein_mat[, colnames(protein_mat) %in% samples_to_select]
+reference_strain <- "Low"
+metadata_subset <- metadata %>%
+  dplyr::filter(Sample.Name %in% samples_to_select) %>%
+  dplyr::select(-Strain.Name) %>%
+  dplyr::rename(Strain.Name = parameter)
+
+# Run differential expression analysis
+de_analysis_results <- de_analysis(raw_data = temp_protein_mat,
+                                   metadata = metadata_subset,
+                                   method = "limma",
+                                   strain_name_column = "Strain.Name", 
+                                   sample_name_column = "Sample.Name", 
+                                   reference_strain = reference_strain,
+                                   N = 10,
+                                   lfc_threshold = 0.5,
+                                   alpha = 0.05)
+da <- de_analysis_results$DE_df
+write_json(da, path=paste(base_dir, "ToleranceEvo_Wenxi/Data/enrichment_analysis/da_", treatment, "_", parameter, "_", alpha_plain, "_logFC_", as.character(lfc_threshold), ".json", sep=""), pretty = T)
+
+# Get responsiveness df
+resp <- create_responsiveness_df(da,
+                                 lfc_threshold = 0.5,
+                                 alpha = 0.05)
+
+# Add other informative columns to resp df
+temp <- metadata %>%
+  dplyr::select(Strain.Name, Strain.Type, Treatment, Passage) %>%
+  dplyr::distinct(Strain.Name, .keep_all = T)
+resp <- left_join(resp, temp, by = "Strain.Name")
+
+# Histograms of logFC and p-values
+ggplot(data = da, aes(x = logFC)) +
+  geom_histogram(col = "black", fill = "grey") +
+  theme_light() +
+  labs(title = paste("logFCs for DEA by", parameter, sep=" "),
+       subtitle = paste("For", treatment, "samples", sep=" "))
+
+ggplot(data = da, aes(x = P.Value)) +
+  geom_histogram(col = "black", fill = "grey") +
+  theme_light() +
+  labs(title = paste("Raw p-values for DEA by", parameter, sep=" "),
+       subtitle = paste("For", treatment, "samples", sep=" "))
+
+ggplot(data = da, aes(x = adj.P.Val)) +
+  geom_histogram(col = "black", fill = "grey") +
+  theme_light() +
+  labs(title = paste("Adjusted p-values for DEA by", parameter, sep=" "),
+       subtitle = paste("For", treatment, "samples", sep=" "))
+```
+
+### 3.1.5. All samples, compare liquid and fluconazole vs. pellet - no significance
+```{r}
+# Set up
+parameter <- "Treatment"
+
+# Grab only liquid treatment samples
+temp_protein_mat <- protein_mat
+reference_strain <- "Pellet"
+metadata_subset <- metadata %>%
+  dplyr::select(-Strain.Name) %>%
+  dplyr::rename(Strain.Name = parameter)
+
+# Run differential expression analysis
+de_analysis_results <- de_analysis(raw_data = temp_protein_mat,
+                                   metadata = metadata_subset,
+                                   method = "limma",
+                                   strain_name_column = "Strain.Name", 
+                                   sample_name_column = "Sample.Name", 
+                                   reference_strain = reference_strain,
+                                   N = 10,
+                                   lfc_threshold = 0.5,
+                                   alpha = 0.05)
+da <- de_analysis_results$DE_df
+write_json(da, path=paste(base_dir, "ToleranceEvo_Wenxi/Data/enrichment_analysis/da_all_samples_", parameter, "_", alpha_plain, "_logFC_", as.character(lfc_threshold), ".json", sep=""), pretty = T)
+
+# Get responsiveness df
+resp <- create_responsiveness_df(da,
+                                 lfc_threshold = 0.5,
+                                 alpha = 0.05)
+
+# Histograms of logFC and p-values
+ggplot(data = da, aes(x = logFC)) +
+  geom_histogram(col = "black", fill = "grey") +
+  theme_light() +
+  labs(title = paste("logFCs for DEA by", parameter, sep=" "),
+       subtitle = paste("For", treatment, "samples", sep=" "))
+
+ggplot(data = da, aes(x = P.Value)) +
+  geom_histogram(col = "black", fill = "grey") +
+  theme_light() +
+  labs(title = paste("Raw p-values for DEA by", parameter, sep=" "),
+       subtitle = paste("For", treatment, "samples", sep=" "))
+
+ggplot(data = da, aes(x = adj.P.Val)) +
+  geom_histogram(col = "black", fill = "grey") +
+  theme_light() +
+  labs(title = paste("Adjusted p-values for DEA by", parameter, sep=" "),
+       subtitle = paste("For", treatment, "samples", sep=" "))
+```
+
+### 3.1.6. Pellet samples, passages 4 and 7 vs. passage 0 - no significance
+```{r}
+# Set up
+treatment <- "Pellet"
+parameter <- "Passage"
+
+# Grab only liquid treatment samples
+samples_to_select <- metadata$Sample.Name[metadata$Treatment == treatment]
+temp_protein_mat <- protein_mat[, colnames(protein_mat) %in% samples_to_select]
+reference_strain <- "Passage_0"
+metadata_subset <- metadata %>%
+  dplyr::filter(Sample.Name %in% samples_to_select) %>%
+  dplyr::select(-Strain.Name) %>%
+  dplyr::mutate(Passage = paste("Passage_", Passage, sep="")) %>%
+  dplyr::rename(Strain.Name = parameter)
+
+# Run differential expression analysis
+de_analysis_results <- de_analysis(raw_data = temp_protein_mat,
+                                   metadata = metadata_subset,
+                                   method = "limma",
+                                   strain_name_column = "Strain.Name", 
+                                   sample_name_column = "Sample.Name", 
+                                   reference_strain = reference_strain,
+                                   N = 10,
+                                   lfc_threshold = 0.5,
+                                   alpha = 0.05)
+da <- de_analysis_results$DE_df
+write_json(da, path=paste(base_dir, "ToleranceEvo_Wenxi/Data/enrichment_analysis/da_", treatment, "_", parameter, "_", alpha_plain, "_logFC_", as.character(lfc_threshold), ".json", sep=""), pretty = T)
+
+# Get responsiveness df
+resp <- create_responsiveness_df(da,
+                                 lfc_threshold = 0.5,
+                                 alpha = 0.05)
+
+# Histograms of logFC and p-values
+ggplot(data = da, aes(x = logFC)) +
+  geom_histogram(col = "black", fill = "grey") +
+  theme_light() +
+  labs(title = paste("logFCs for DEA by", parameter, sep=" "),
+       subtitle = paste("For", treatment, "samples", sep=" "))
+
+ggplot(data = da, aes(x = P.Value)) +
+  geom_histogram(col = "black", fill = "grey") +
+  theme_light() +
+  labs(title = paste("Raw p-values for DEA by", parameter, sep=" "),
+       subtitle = paste("For", treatment, "samples", sep=" "))
+
+ggplot(data = da, aes(x = adj.P.Val)) +
+  geom_histogram(col = "black", fill = "grey") +
+  theme_light() +
+  labs(title = paste("Adjusted p-values for DEA by", parameter, sep=" "),
+       subtitle = paste("For", treatment, "samples", sep=" "))
+```
+
+### 3.1.7. Liquid samples, passages 4 and 7 vs. passage 0 - no significance
+```{r}
+# Set up
+treatment <- "Liquid"
+parameter <- "Passage"
+
+# Grab only liquid treatment samples
+samples_to_select <- metadata$Sample.Name[metadata$Treatment == treatment]
+temp_protein_mat <- protein_mat[, colnames(protein_mat) %in% samples_to_select]
+reference_strain <- "Passage_0"
+metadata_subset <- metadata %>%
+  dplyr::filter(Sample.Name %in% samples_to_select) %>%
+  dplyr::select(-Strain.Name) %>%
+  dplyr::mutate(Passage = paste("Passage_", Passage, sep="")) %>%
+  dplyr::rename(Strain.Name = parameter)
+
+# Run differential expression analysis
+de_analysis_results <- de_analysis(raw_data = temp_protein_mat,
+                                   metadata = metadata_subset,
+                                   method = "limma",
+                                   strain_name_column = "Strain.Name", 
+                                   sample_name_column = "Sample.Name", 
+                                   reference_strain = reference_strain,
+                                   N = 10,
+                                   lfc_threshold = 0.5,
+                                   alpha = 0.05)
+da <- de_analysis_results$DE_df
+write_json(da, path=paste(base_dir, "ToleranceEvo_Wenxi/Data/enrichment_analysis/da_", treatment, "_", parameter, "_", alpha_plain, "_logFC_", as.character(lfc_threshold), ".json", sep=""), pretty = T)
+
+# Get responsiveness df
+resp <- create_responsiveness_df(da,
+                                 lfc_threshold = 0.5,
+                                 alpha = 0.05)
+
+# Histograms of logFC and p-values
+ggplot(data = da, aes(x = logFC)) +
+  geom_histogram(col = "black", fill = "grey") +
+  theme_light() +
+  labs(title = paste("logFCs for DEA by", parameter, sep=" "),
+       subtitle = paste("For", treatment, "samples", sep=" "))
+
+ggplot(data = da, aes(x = P.Value)) +
+  geom_histogram(col = "black", fill = "grey") +
+  theme_light() +
+  labs(title = paste("Raw p-values for DEA by", parameter, sep=" "),
+       subtitle = paste("For", treatment, "samples", sep=" "))
+
+ggplot(data = da, aes(x = adj.P.Val)) +
+  geom_histogram(col = "black", fill = "grey") +
+  theme_light() +
+  labs(title = paste("Adjusted p-values for DEA by", parameter, sep=" "),
+       subtitle = paste("For", treatment, "samples", sep=" "))
+```
+
+### 3.1.8. Pellet samples, per actual strain - no significance
+```{r}
+# Set up
+treatment <- "Pellet"
+parameter <- "Strain.Name"
+
+# Grab only liquid treatment samples
+samples_to_select <- metadata$Sample.Name[metadata$Treatment == treatment]
+temp_protein_mat <- protein_mat[, colnames(protein_mat) %in% samples_to_select]
+reference_strain <- "C0P"
+metadata_subset <- metadata %>%
+  dplyr::filter(Sample.Name %in% samples_to_select)
+
+# Run differential expression analysis
+de_analysis_results <- de_analysis(raw_data = temp_protein_mat,
+                                   metadata = metadata_subset,
+                                   method = "limma",
+                                   strain_name_column = "Strain.Name", 
+                                   sample_name_column = "Sample.Name", 
+                                   reference_strain = reference_strain,
+                                   N = 10,
+                                   lfc_threshold = 0.5,
+                                   alpha = 0.05)
+da <- de_analysis_results$DE_df
+write_json(da, path=paste(base_dir, "ToleranceEvo_Wenxi/Data/enrichment_analysis/da_", treatment, "_", parameter, "_", alpha_plain, "_logFC_", as.character(lfc_threshold), ".json", sep=""), pretty = T)
+
+# Get responsiveness df
+resp <- create_responsiveness_df(da,
+                                 lfc_threshold = 0.5,
+                                 alpha = 0.05)
+
+# Histograms of logFC and p-values
+ggplot(data = da, aes(x = logFC)) +
+  geom_histogram(col = "black", fill = "grey") +
+  theme_light() +
+  labs(title = paste("logFCs for DEA by", parameter, sep=" "),
+       subtitle = paste("For", treatment, "samples", sep=" "))
+
+ggplot(data = da, aes(x = P.Value)) +
+  geom_histogram(col = "black", fill = "grey") +
+  theme_light() +
+  labs(title = paste("Raw p-values for DEA by", parameter, sep=" "),
+       subtitle = paste("For", treatment, "samples", sep=" "))
+
+ggplot(data = da, aes(x = adj.P.Val)) +
+  geom_histogram(col = "black", fill = "grey") +
+  theme_light() +
+  labs(title = paste("Adjusted p-values for DEA by", parameter, sep=" "),
+       subtitle = paste("For", treatment, "samples", sep=" "))
+```
+
+--> Probably just delete all of these, they are a bit naive, I am not taking into account the collinearity between Passage and Resistance/Tolerance, nor the effect of all variables at once: this is, I separate by treatment sometimes, which is nice, so I don't get that mixed up with what I am trying to model (the relationship between resistance/tolerance and protein expression), however I don't do the same for the strain type! 
+
+--> So what I am going to do now is fit a model which accounts for all variables (except Passage, which I am leaving out to avoid collinearity with tolerance/resistance, assuming that all the relevant information that Passage can provide is present in resistance/tolerance as well - THIS ASSUMPTION I SHOULD THINK MORE ABOUT), this is, contains as regressors: resistance/tolerance, strain type and treatment. In this way, the effect of strain type and treatment is accounted for instead of it being treated as noise, which will make it easier for the model to find an effect of resistance/tolerance. Then, I can interpret the logFCs and the p-values for the resistance/tolerance variable, although I think that logFC needs to be interpreted in a slightly different way from usually! NEED TO MAKE SURE TO LOOK INTO THIS. 
+
+For resistance
+```{r}
+raw_data <- protein_mat[, !grepl("QC", colnames(protein_mat))]
+
+# Make sure column order matches
+metadata <- metadata[match(colnames(raw_data), metadata$Sample.Name), ] %>%
+  dplyr::mutate(Resistance = -RAD20)
+
+# Design matrix
+design <- model.matrix(~ Resistance + Treatment + Strain.Type, data = metadata)
+colnames(design)
+# The first column (Intercept) is baseline expression
+# The second column (Resistance) is your variable of interest
+
+# Fit model
+fit <- lmFit(raw_data, design)
+fit <- eBayes(fit)
+
+# Extract results for the 'Resistance' coefficient
+resistance_results <- topTable(fit, coef = "Resistance", number = Inf, adjust.method = "BH")
+
+# Add protein IDs
+resistance_results <- tibble::rownames_to_column(resistance_results, var = "protein")
+
+# Classify as up/down associated
+resistance_results <- resistance_results %>%
+  mutate(
+    diffexpressed_adjusted = case_when(
+      (logFC > 0 & adj.P.Val < 0.05) ~ "Positively_correlated_with_resistance",
+      (logFC < 0 & adj.P.Val < 0.05) ~ "Negatively_correlated_with_resistance",
+      TRUE ~ "Not_significant"
+    )
+  )
+
+# Quick summary
+table(resistance_results$diffexpressed_adjusted)
+
+
+# Volcano plot
+ggplot(data = resistance_results, aes(x = logFC, y = -log10(adj.P.Val))) +
+  geom_point() +
+  theme_light() +
+  geom_hline(yintercept = -log10(0.05), col = "orange", linewidth = 1) +
+  labs(title = "Differentially abundant proteins with respect to resistance")
+  #geom_vline(xintercept = 0.0075, col = "orange", linewidth = 1) +
+  #geom_vline(xintercept = -0.0075, col = "orange", linewidth = 1)
+
+
+# Correlation heatmap
+## Select top positively and negatively correlated proteins
+top_pos <- resistance_results %>%
+  arrange(desc(logFC)) %>%
+  slice_head(n = 15) %>%
+  pull(protein)
+
+top_neg <- resistance_results %>%
+  arrange(logFC) %>%
+  slice_head(n = 15) %>%
+  pull(protein)
+
+top_proteins <- c(top_pos, top_neg)
+
+## Subset expression matrix
+expr_subset <- raw_data[top_proteins, ]
+
+## Optionally order samples by Resistance level
+sample_order <- order(metadata$RAD20)
+expr_subset <- expr_subset[, sample_order]
+annotation_col <- metadata[sample_order, c("Resistance", "Treatment")]
+
+## Plot heatmap
+# --- Step 1: Z-score (row-scale) the expression matrix manually
+expr_scaled <- t(scale(t(expr_subset)))  # same as pheatmap(scale="row")
+
+# --- Step 2: Prepare column annotations
+# Convert annotation_col to a HeatmapAnnotation object
+# You can specify colors if you like, or let ComplexHeatmap choose automatically
+
+ha_col <- HeatmapAnnotation(
+  df = annotation_col,
+  col = list(
+    Treatment = structure(
+      RColorBrewer::brewer.pal(length(unique(annotation_col$Treatment)), "Set2"),
+      names = unique(annotation_col$Treatment)
+    ),
+    # Optional: color scale for numeric variables
+    Resistance = colorRamp2(
+      c(min(annotation_col$Resistance), max(annotation_col$Resistance)),
+      c("blue", "red")
+    )
+  ),
+  annotation_height = unit(0.8, "cm")
+)
+
+# --- Step 3: Draw the heatmap
+Heatmap(
+  expr_scaled,
+  name = "Z-score",
+  top_annotation = ha_col,
+  show_row_names = TRUE,
+  show_column_names = FALSE,
+  cluster_rows = TRUE,
+  cluster_columns = TRUE,
+  clustering_method_rows = "complete",
+  clustering_method_columns = "complete",
+  column_title = "Top proteins correlated with resistance",
+  row_title = "Proteins",
+  heatmap_legend_param = list(title = "Expression (Z)")
+)
+
+```
+
+For tolerance
+```{r}
+raw_data <- protein_mat[, !grepl("QC", colnames(protein_mat))]
+
+# Make sure column order matches
+metadata <- metadata[match(colnames(raw_data), metadata$Sample.Name), ]
+
+# Design matrix
+design <- model.matrix(~ FoG20 + Treatment + Strain.Type, data = metadata)
+colnames(design)
+# The first column (Intercept) is baseline expression
+# The second column (FoG20) is your variable of interest
+
+# Fit model
+fit <- lmFit(raw_data, design)
+fit <- eBayes(fit)
+
+# Extract results for the 'FoG20' coefficient
+FoG20_results <- topTable(fit, coef = "FoG20", number = Inf, adjust.method = "BH")
+
+# Add protein IDs
+FoG20_results <- tibble::rownames_to_column(FoG20_results, var = "protein")
+
+# Classify as up/down associated
+FoG20_results <- FoG20_results %>%
+  mutate(
+    diffexpressed_adjusted = case_when(
+      (logFC > 0 & adj.P.Val < 0.05) ~ "Positively_correlated_with_FoG20",
+      (logFC < 0 & adj.P.Val < 0.05) ~ "Negatively_correlated_with_FoG20",
+      TRUE ~ "Not_significant"
+    )
+  )
+
+# Quick summary
+table(FoG20_results$diffexpressed_adjusted)
+
+
+# Volcano plot
+ggplot(data = FoG20_results, aes(x = logFC, y = -log10(adj.P.Val))) +
+  geom_point() +
+  theme_light() +
+  geom_hline(yintercept = -log10(0.05), col = "orange", linewidth = 1) +
+  geom_vline(xintercept = 0.05, col = "orange", linewidth = 1) +
+  geom_vline(xintercept = -0.05, col = "orange", linewidth = 1) +
+  labs(title = "Differentially abundant proteins with respect to tolerance")
+
+
+# Correlation heatmap
+## Select top positively and negatively correlated proteins
+top_pos <- FoG20_results %>%
+  arrange(desc(logFC)) %>%
+  slice_head(n = 15) %>%
+  pull(protein)
+
+top_neg <- FoG20_results %>%
+  arrange(logFC) %>%
+  slice_head(n = 15) %>%
+  pull(protein)
+
+top_proteins <- c(top_pos, top_neg)
+
+## Subset expression matrix
+expr_subset <- raw_data[top_proteins, ]
+
+## Optionally order samples by FoG20 level
+sample_order <- order(metadata$FoG20)
+expr_subset <- expr_subset[, sample_order]
+annotation_col <- metadata[sample_order, c("FoG20", "Treatment")]
+
+## Plot heatmap
+# --- Step 1: Z-score (row-scale) the expression matrix manually
+expr_scaled <- t(scale(t(expr_subset)))  # same as pheatmap(scale="row")
+
+# --- Step 2: Prepare column annotations
+# Convert annotation_col to a HeatmapAnnotation object
+# You can specify colors if you like, or let ComplexHeatmap choose automatically
+
+ha_col <- HeatmapAnnotation(
+  df = annotation_col,
+  col = list(
+    Treatment = structure(
+      RColorBrewer::brewer.pal(length(unique(annotation_col$Treatment)), "Set2"),
+      names = unique(annotation_col$Treatment)
+    ),
+    # Optional: color scale for numeric variables
+    FoG20 = colorRamp2(
+      c(min(annotation_col$FoG20), max(annotation_col$FoG20)),
+      c("blue", "red")
+    )
+  ),
+  annotation_height = unit(0.8, "cm")
+)
+
+# --- Step 3: Draw the heatmap
+Heatmap(
+  expr_scaled,
+  name = "Z-score",
+  top_annotation = ha_col,
+  show_row_names = TRUE,
+  show_column_names = FALSE,
+  cluster_rows = TRUE,
+  cluster_columns = TRUE,
+  clustering_method_rows = "complete",
+  clustering_method_columns = "complete",
+  column_title = "Top proteins correlated with FoG20",
+  row_title = "Proteins",
+  heatmap_legend_param = list(title = "Expression (Z)")
+)
+
+```
+
+Some sanity checks - STILL NEED TO GO THROUGH THIS
+```{r}
+# Check collinearity
+car::vif(lm(RAD20 ~ Treatment + Strain.Type, data = metadata))
+car::vif(lm(FoG20 ~ Treatment + Strain.Type, data = metadata))
+
+# Correlation between Passage and Resistance
+cor(metadata$Passage, metadata$RAD20, use = "pairwise.complete.obs")
+cor(metadata$Passage, metadata$FoG20, use = "pairwise.complete.obs")
+
+# Plot some examples
+example_protein <- resistance_results$protein[1]
+df_plot <- data.frame(
+  Expression = raw_data[example_protein, ],
+  Resistance = metadata$RAD20,
+  Treatment = metadata$Treatment)
+ggplot(df_plot, aes(x = RAD20, y = Expression, color = Treatment)) +
+  geom_point(size = 2) +
+  geom_smooth(method = "lm", se = FALSE) +
+  ggtitle(example_protein)
+
+example_protein <- resistance_results$protein[1]
+df_plot <- data.frame(
+  Expression = raw_data[example_protein, ],
+  Resistance = metadata$FoG20,
+  Treatment = metadata$Treatment)
+ggplot(df_plot, aes(x = FoG20, y = Expression, color = Treatment)) +
+  geom_point(size = 2) +
+  geom_smooth(method = "lm", se = FALSE) +
+  ggtitle(example_protein)
 ```
 
 
 
 
+
+
+
+--> Going to do a GSEA for the up- and down- regulated proteins in tolerance, since in resistance we can't really see much
+
 # 3. GSEA
+Load data
+```{r}
+# Full Entrez ID dataframe, with all genes
+#entrez_db <- as.data.frame(fread(paste(base_dir, "ToleranceEvo_Wenxi/Data/enrichment_analysis/databases/uniprotkb_proteome_UP000000559_2025_10_19.tsv", sep="")))
+```
+
+
+## 3.1. Prepare ranked gene lists
+For now, my score/rank is: sign(logFC)*(-log10(adj.P.Val))
+```{r}
+# Get the corresponding KEGG IDs to these UniProt gene names, since the GSEA is performed in terms of those
+temp_entrez <- entrez_db %>%
+  dplyr::select(Entry, GeneID) %>%
+  dplyr::rename(uniprot = Entry) %>%
+  dplyr::mutate(GeneID = substr(GeneID, 1, nchar(GeneID)-1))
+
+FoG20_results <- FoG20_results %>%
+  dplyr::rename(uniprot = protein) %>%
+  left_join(temp_entrez, by = "uniprot")
+
+# Using as score the -log10(p-value)*sign of the logFC
+rankings <- sign(FoG20_results$logFC)*(-log10(FoG20_results$adj.P.Val))
+names(rankings) <- FoG20_results$GeneID
+rankings <- sort(rankings, decreasing = TRUE)
+
+# Plot
+plot(rankings)
+
+# Check max and min - to see if there is a need to correct for -Inf and +Inf - commented out, I don't think it's necessary
+#print(max(rankings))
+#print(min(rankings))
+
+# Some genes have such low p values that the signed pval is +- inf, we need to change it to the maximum * constant to avoid problems with fgsea
+# (this part is copy pasted from the link)
+max_ranking <- max(rankings[is.finite(rankings)])
+min_ranking <- min(rankings[is.finite(rankings)])
+rankings <- replace(rankings, rankings > max_ranking, max_ranking * 10)
+rankings <- replace(rankings, rankings < min_ranking, min_ranking * 10)
+rankings <- sort(rankings, decreasing = TRUE)                                   # sort genes by ranking
+
+# Get rid of rankings with emtpy names and with repeated names
+length(rankings)
+rankings <- rankings[!is.na(names(rankings)) & names(rankings) != ""]
+rankings <- rankings[!duplicated(names(rankings))]
+length(rankings)
+
+
+# Save this ranked lists so that I can use them later to pick the top 50 proteins in each strain, to look at the overlaps between major strains within families in a more unbiased manner - not really feasible for now since the distribution of the scores for the vast majority of strains is pretty much flat. I wonder how much this affects my DEA?
+#write_json(ranked_genes, path = paste(base_dir, "ToleranceEvo_Wenxi/Data/enrichment_analysis/lists_of_ranked_genes_", alpha_plain, "_logFC_", as.character(lfc_threshold), sep=""), pretty = T)
+```
+
+## 3.2. Perform GSEA with KEGG annotation - as described by https://biostatsquid.com/fgsea-tutorial-gsea/
+### Download KEGG gene lists (according to https://www.researchgate.net/post/How_i_can_get_a_list_of_KEGG_pathways_and_its_list_of_genes)
+DO NOT RUN AGAIN - I used this to download the .gmt file, I just need to load it, but I left this code here in case I want to know how I did it
+```{r}
+#library("KEGGREST")
+#library("EnrichmentBrowser")
+#
+##step2: check and obtain a list of entry identifiers (in this case: sce) and associated definition for a given database or a given set of database entries.
+#MRSA252 <- keggList("cal")
+#
+##step 3: download the pathways of that organism:
+#sarpathway <- downloadPathways("cal")
+#
+##step 4: retrieve gene sets for an organism from databases such as GO and KEGG:
+#sar <- getGenesets(org = "cal", db = "kegg", cache = TRUE, return.type="list")
+#
+##step5: Parse and write the gene sets to a flat text file in GMT format for other pathway enrichment analysis programs (e.g., GSEA):
+#writeGMT(sar, gmt.file = paste(base_dir, "ToleranceEvo_Wenxi/Data/enrichment_analysis/databases/20251019_kegg_cal.gmt", sep=""))
+```
+
+### Process .gmt file to turn it into the list of gene set vectors we need for gsea()
+Get a list of pathways, with each entry being a vector with the Entrez IDs for the genes involved in that pathway. Make it so that only proteins that we detect in our dataset are included here. 
+```{r}
+# Read in the .gmt file
+library(qusage)
+gmt <- read.gmt(paste(base_dir, "ToleranceEvo_Wenxi/Data/enrichment_analysis/databases/20251019_kegg_cal.gmt", sep=""))
+gmt$term <- as.character(gmt$term)
+
+# Get a simple vector with the Entrez IDs of the proteins we detect - now we already have it! It's temp_entrez$GeneID :)
+proteins_detected <- temp_entrez$GeneID
+
+# Get our list of vectors, where each vector is a KEGG pathway and the terms in it are the genes related to it - keeping only genes which are detected in our dataset
+kegg_genes <- list()
+pathways <- names(gmt)
+
+kegg_genes <- lapply(names(gmt), function(pathway) {
+  intersect(gmt[[pathway]], proteins_detected)
+})
+names(kegg_genes) <- names(gmt)
+```
+
+### Run GSEA
+The warning I get here refers to many proteins having exactly the same rank (these are the ones we see in a horizontal line in the plots produced in 5.1.) - this should be okay, since these are the genes that were not significantly differentially expressed at all - but tbh this makes it so that I cannot really get that much info from those anyway, right? So there isn't that much of a difference between this and doing the GSEA only with DE proteins, right?? Idk
+```{r}
+library(fgsea)
+fgseaRes <- fgsea(
+  pathways = kegg_genes,
+  stats = rankings,
+  minSize = 10,
+  maxSize = 500)
+
+# Save these results
+fwrite(fgseaRes, paste(base_dir, "ToleranceEvo_Wenxi/Data/enrichment_analysis/kegg_gsea_results_tolerance_", alpha_plain, "_logFC_", as.character(lfc_threshold), "_enrichment_alpha_", alpha_enrichment_plain, ".tsv", sep=""))
+```
+
+### Get a volcano plot for the GSEA results
+```{r}
+fgseaRes <- as.data.frame(fread(paste(base_dir, "ToleranceEvo_Wenxi/Data/enrichment_analysis/kegg_gsea_results_tolerance_", alpha_plain, "_logFC_", as.character(lfc_threshold), "_enrichment_alpha_", alpha_enrichment_plain, ".tsv", sep="")))
+
+ggplot(data = fgseaRes, aes(x = NES, y = -log10(padj))) +
+  geom_point() +
+  geom_hline(yintercept = -log10(0.05), col = "orange", linewidth = 1) +
+  theme_light() +
+  xlab("Normalized Enrichment Score") +
+  ylab("-log10(Adjusted p-value)") +
+  labs(title = "KEGG pathways enriched with respect to tolerance") +
+  geom_label_repel(data = subset(fgseaRes, NES > 1.5 & -log10(padj) > -log10(0.05)),
+                   aes(x = NES, y = -log10(padj), label = pathway))
+```
+
+### Not too practical since pathway names are too long to fit in there, let me try a barplot:
+```{r}
+fgseaRes <- fgseaRes %>%
+  dplyr::mutate(direction = case_when(
+    NES > 0 ~ "Upregulated",
+    NES < 0 ~ "Downregulated",
+    TRUE    ~ "Neutral")) %>%
+  dplyr::mutate(pathway = str_replace_all(str_remove(pathway, "^[^_]*_"), "_", " "))
+
+top_pathways <- fgseaRes %>%
+  dplyr::filter(padj < 0.05) %>%
+  arrange(padj)
+
+ggplot(top_pathways, aes(x = fct_reorder(pathway, NES), y = NES, fill = direction)) +
+  geom_col() +
+  coord_flip() +   # horizontal bars
+  scale_fill_manual(values = c("Upregulated" = "firebrick", "Downregulated" = "steelblue")) +
+  labs(x = "Pathway",
+       y = "Normalized Enrichment Score (NES)",
+       title = "Top enriched pathways with respect to tolerance") +
+  theme_minimal(base_size = 14) +
+  theme(plot.title = element_text(size = 13))  # set smaller title font here)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 ## 3.1. Prepare ranked gene lists
 For now, my score/rank is: sign(logFC)*(-log10(adj.P.Val))
 ```{r}
