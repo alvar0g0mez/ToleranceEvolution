@@ -67,7 +67,6 @@ alpha_enrichment_plain <- str_replace(as.character(alpha_enrichment), "\\.", "")
 lfc_threshold <- 0.5
 ```
 
-
 Load data
 ```{r}
 # Precursor data wide format
@@ -87,7 +86,7 @@ uniprot_db <- as.data.frame(fread(paste(base_dir, "tRNA_KOs/Data/databases/unipr
 
 # 0. Some QC plots of the fully processed precursor-level data before anything else
 ```{r}
-# Switch to long format
+# Switch this data from wide format to long format - necessary to be able to plot 
 temp <- as.data.frame(raw_prec_data)
 temp$Precursor.Id <- rownames(temp)
 metadata_temp <- metadata %>%
@@ -112,45 +111,45 @@ Performed with limpa. Filtering and pre-processing at the precursor level was do
 
 ## 1.1. Peptide to protein summarization - NOT USED AT THE MOMENT SINCE I ALREADY DID IT ONCE
 ```{r}
-## Prepare protein ID vector matching the precursor order in the rows of the raw data, setting the order based on that of the rows of the precursor raw #data
-#precursor_protein_correspondence <- precursor_protein_correspondence %>%
-#  dplyr::filter(Precursor.Id %in% rownames(raw_prec_data))
-#precursor_protein_correspondence <- precursor_protein_correspondence[match(rownames(raw_prec_data), precursor_protein_correspondence$Precursor.Id),]
-#
-#
-## Remove QC samples
-#raw_prec_data <- raw_prec_data[, !(grepl("QC", colnames(raw_prec_data)))]
-#
-## Run summarization
-#summarization_results <- protein_summarize(raw_data = raw_prec_data,
-#                                 protein_ids = precursor_protein_correspondence$Protein.Ids,
-#                                 method = "limpa")
-#protein_mat <- summarization_results$y.protein$E
-#
-## Remove proteins which are present in less than 65% of the samples per strain - NOT NECESSARY RIGHT NOW SINCE I'M USING FULLY IMPUTED DATASET
-##protein_mat <- as.data.frame(protein_mat)
-##protein_mat$Precursor.Id <- rownames(protein_mat)
-##protein_mat <- pivot_longer(protein_mat,                                                  # Switch to longer format for filtering
-##                                 cols = !Precursor.Id,
-##                                 names_to = "Strain.Name",
-##                                 values_to = "Protein.Intensity") %>%
-##  dplyr::filter(!is.na(Protein.Intensity)) %>%                                            # Remove rows with NAs, otherwise this filtering doesn't work #(it's based on the     #                                                                                          row being present or not, not on its #contents)
-##  remove_uncommon_precursors_per_strain(percentage_of_samples_per_precursor = 0.65) %>%   # Filter
-##  pivot_wider(names_from = "Strain.Name",                                                 # Set back to wide format
-##              values_from = "Protein.Intensity") %>%
-##  as.data.frame() %>%
-##  set_column_as_rownames("Precursor.Id") 
-##sum(is.na(protein_mat))
-##sum(is.na(protein_mat))/(ncol(protein_mat)*nrow(protein_mat))
-#
-## Save protein level dataset
-#saveRDS(summarization_results, paste(base_dir, "ToleranceEvo_Wenxi/Data/Preprocessing_steps/protein_summarized_fully_imputed.rds", sep = ""))
-#
-## Quickly look at the distribution of the protein abundances
-#protein_abundances_long <- pivot_longer(as.data.frame(protein_mat), cols = everything(), names_to = "Sample.Name", values_to = "Abundance")
-#ggplot(data = protein_abundances_long, aes(x = Sample.Name, y = Abundance)) +
-#  geom_boxplot() +
-#  theme_light()
+# Prepare protein ID vector matching the precursor order in the rows of the raw data, setting the order based on that of the rows of the precursor rawdata - this is, I create a vector with the same length as the columns of this dataframe, where each entry is the name of the protein corresponding to the precursor in that row in the dataframe. 
+precursor_protein_correspondence <- precursor_protein_correspondence %>%
+  dplyr::filter(Precursor.Id %in% rownames(raw_prec_data))
+precursor_protein_correspondence <- precursor_protein_correspondence[match(rownames(raw_prec_data), precursor_protein_correspondence$Precursor.Id),]
+
+
+# Remove QC samples
+raw_prec_data <- raw_prec_data[, !(grepl("QC", colnames(raw_prec_data)))]
+
+# Run summarization to protein level - this is the algorithm that takes the precursor abundances and returns protein abundances
+summarization_results <- protein_summarize(raw_data = raw_prec_data,
+                                           protein_ids = precursor_protein_correspondence$Protein.Ids,
+                                           method = "limpa")
+protein_mat <- summarization_results$y.protein$E
+
+# Remove proteins which are present in less than 65% of the samples per strain - NOT NECESSARY RIGHT NOW SINCE I'M USING FULLY IMPUTED DATASET, but might be necessary if I change my pre-processing
+#protein_mat <- as.data.frame(protein_mat)
+#protein_mat$Precursor.Id <- rownames(protein_mat)
+#protein_mat <- pivot_longer(protein_mat,                                                  # Switch to longer format for filtering
+#                                 cols = !Precursor.Id,
+#                                 names_to = "Strain.Name",
+#                                 values_to = "Protein.Intensity") %>%
+#  dplyr::filter(!is.na(Protein.Intensity)) %>%                                            # Remove rows with NAs, otherwise this filtering doesn't work #(it's based on the     #                                                                                         row being present or not, not on its #contents)
+#  remove_uncommon_precursors_per_strain(percentage_of_samples_per_precursor = 0.65) %>%   # Filter
+#  pivot_wider(names_from = "Strain.Name",                                                 # Set back to wide format
+#              values_from = "Protein.Intensity") %>%
+#  as.data.frame() %>%
+#  set_column_as_rownames("Precursor.Id") 
+#sum(is.na(protein_mat))
+#sum(is.na(protein_mat))/(ncol(protein_mat)*nrow(protein_mat))
+
+# Save protein level dataset so that we don't need to run summarization every time
+saveRDS(summarization_results, paste(base_dir, "ToleranceEvo_Wenxi/Data/Preprocessing_steps/protein_summarized_fully_imputed.rds", sep = ""))
+
+# Quickly look at the distribution of the protein abundances
+protein_abundances_long <- pivot_longer(as.data.frame(protein_mat), cols = everything(), names_to = "Sample.Name", values_to = "Abundance")
+ggplot(data = protein_abundances_long, aes(x = Sample.Name, y = Abundance)) +
+  geom_boxplot() +
+  theme_light()
 ```
 
 
@@ -1133,9 +1132,15 @@ ggplot(data = resistance_results, aes(x = logFC, y = -log10(adj.P.Val))) +
   geom_point() +
   theme_light() +
   geom_hline(yintercept = -log10(0.05), col = "orange", linewidth = 1) +
-  labs(title = "Differentially abundant proteins with respect to resistance")
-  #geom_vline(xintercept = 0.0075, col = "orange", linewidth = 1) +
-  #geom_vline(xintercept = -0.0075, col = "orange", linewidth = 1)
+  labs(title = "Differentially abundant proteins with respect to resistance") +
+  geom_vline(xintercept = 0.05, col = "orange", linewidth = 1) +
+  geom_vline(xintercept = -0.05, col = "orange", linewidth = 1)
+
+
+
+
+
+
 
 
 # Correlation heatmap
@@ -1244,8 +1249,8 @@ ggplot(data = FoG20_results, aes(x = logFC, y = -log10(adj.P.Val))) +
   geom_point() +
   theme_light() +
   geom_hline(yintercept = -log10(0.05), col = "orange", linewidth = 1) +
-  geom_vline(xintercept = 0.05, col = "orange", linewidth = 1) +
-  geom_vline(xintercept = -0.05, col = "orange", linewidth = 1) +
+  geom_vline(xintercept = 0.5, col = "orange", linewidth = 1) +
+  geom_vline(xintercept = -0.5, col = "orange", linewidth = 1) +
   labs(title = "Differentially abundant proteins with respect to tolerance")
 
 
@@ -1357,7 +1362,7 @@ ggplot(df_plot, aes(x = FoG20, y = Expression, color = Treatment)) +
 Load data
 ```{r}
 # Full Entrez ID dataframe, with all genes
-#entrez_db <- as.data.frame(fread(paste(base_dir, "ToleranceEvo_Wenxi/Data/enrichment_analysis/databases/uniprotkb_proteome_UP000000559_2025_10_19.tsv", sep="")))
+entrez_db <- as.data.frame(fread(paste(base_dir, "ToleranceEvo_Wenxi/Data/enrichment_analysis/databases/uniprotkb_proteome_UP000000559_2025_10_19.tsv", sep="")))
 ```
 
 
@@ -1409,20 +1414,20 @@ length(rankings)
 ### Download KEGG gene lists (according to https://www.researchgate.net/post/How_i_can_get_a_list_of_KEGG_pathways_and_its_list_of_genes)
 DO NOT RUN AGAIN - I used this to download the .gmt file, I just need to load it, but I left this code here in case I want to know how I did it
 ```{r}
-#library("KEGGREST")
-#library("EnrichmentBrowser")
-#
-##step2: check and obtain a list of entry identifiers (in this case: sce) and associated definition for a given database or a given set of database entries.
-#MRSA252 <- keggList("cal")
-#
-##step 3: download the pathways of that organism:
-#sarpathway <- downloadPathways("cal")
-#
-##step 4: retrieve gene sets for an organism from databases such as GO and KEGG:
-#sar <- getGenesets(org = "cal", db = "kegg", cache = TRUE, return.type="list")
-#
-##step5: Parse and write the gene sets to a flat text file in GMT format for other pathway enrichment analysis programs (e.g., GSEA):
-#writeGMT(sar, gmt.file = paste(base_dir, "ToleranceEvo_Wenxi/Data/enrichment_analysis/databases/20251019_kegg_cal.gmt", sep=""))
+library("KEGGREST")
+library("EnrichmentBrowser")
+
+#step2: check and obtain a list of entry identifiers (in this case: sce) and associated definition for a given database r a given set of database entries.
+MRSA252 <- keggList("cal")
+
+#step 3: download the pathways of that organism:
+sarpathway <- downloadPathways("cal")
+
+#step 4: retrieve gene sets for an organism from databases such as GO and KEGG:
+sar <- getGenesets(org = "cal", db = "kegg", cache = TRUE, return.type="list")
+
+#step5: Parse and write the gene sets to a flat text file in GMT format for other pathway enrichment analysis programs (e.g., GSEA):
+writeGMT(sar, gmt.file = paste(base_dir, "ToleranceEvo_Wenxi/Data/enrichment_analysis/databases/20251019_kegg_cal.gmt", sep=""))
 ```
 
 ### Process .gmt file to turn it into the list of gene set vectors we need for gsea()
@@ -1479,8 +1484,8 @@ ggplot(data = fgseaRes, aes(x = NES, y = -log10(padj))) +
 ```{r}
 fgseaRes <- fgseaRes %>%
   dplyr::mutate(direction = case_when(
-    NES > 0 ~ "Upregulated",
-    NES < 0 ~ "Downregulated",
+    NES > 0 ~ "Up-regulated",
+    NES < 0 ~ "Down-regulated",
     TRUE    ~ "Neutral")) %>%
   dplyr::mutate(pathway = str_replace_all(str_remove(pathway, "^[^_]*_"), "_", " "))
 
@@ -1491,10 +1496,10 @@ top_pathways <- fgseaRes %>%
 ggplot(top_pathways, aes(x = fct_reorder(pathway, NES), y = NES, fill = direction)) +
   geom_col() +
   coord_flip() +   # horizontal bars
-  scale_fill_manual(values = c("Upregulated" = "firebrick", "Downregulated" = "steelblue")) +
+  scale_fill_manual(values = c("Up-regulated" = "firebrick", "Down-regulated" = "steelblue")) +
   labs(x = "Pathway",
        y = "Normalized Enrichment Score (NES)",
-       title = "Top enriched pathways with respect to tolerance") +
+       title = "Top enriched pathways with respect to resistance") +
   theme_minimal(base_size = 14) +
   theme(plot.title = element_text(size = 13))  # set smaller title font here)
 ```
@@ -1507,7 +1512,103 @@ ggplot(top_pathways, aes(x = fct_reorder(pathway, NES), y = NES, fill = directio
 
 
 
+## 3.1. Prepare ranked gene lists
+For now, my score/rank is: sign(logFC)*(-log10(adj.P.Val))
+```{r}
+# Get the corresponding KEGG IDs to these UniProt gene names, since the GSEA is performed in terms of those
+temp_entrez <- entrez_db %>%
+  dplyr::select(Entry, GeneID) %>%
+  dplyr::rename(uniprot = Entry) %>%
+  dplyr::mutate(GeneID = substr(GeneID, 1, nchar(GeneID)-1))
 
+resistance_results <- resistance_results %>%
+  dplyr::rename(uniprot = protein) %>%
+  left_join(temp_entrez, by = "uniprot")
+
+# Using as score the -log10(p-value)*sign of the logFC
+rankings <- sign(resistance_results$logFC)*(-log10(resistance_results$adj.P.Val))
+names(rankings) <- resistance_results$GeneID
+rankings <- sort(rankings, decreasing = TRUE)
+
+# Plot
+plot(rankings)
+
+# Check max and min - to see if there is a need to correct for -Inf and +Inf - commented out, I don't think it's necessary
+#print(max(rankings))
+#print(min(rankings))
+
+# Some genes have such low p values that the signed pval is +- inf, we need to change it to the maximum * constant to avoid problems with fgsea
+# (this part is copy pasted from the link)
+max_ranking <- max(rankings[is.finite(rankings)])
+min_ranking <- min(rankings[is.finite(rankings)])
+rankings <- replace(rankings, rankings > max_ranking, max_ranking * 10)
+rankings <- replace(rankings, rankings < min_ranking, min_ranking * 10)
+rankings <- sort(rankings, decreasing = TRUE)                                   # sort genes by ranking
+
+# Get rid of rankings with emtpy names and with repeated names
+length(rankings)
+rankings <- rankings[!is.na(names(rankings)) & names(rankings) != ""]
+rankings <- rankings[!duplicated(names(rankings))]
+length(rankings)
+
+
+# Save this ranked lists so that I can use them later to pick the top 50 proteins in each strain, to look at the overlaps between major strains within families in a more unbiased manner - not really feasible for now since the distribution of the scores for the vast majority of strains is pretty much flat. I wonder how much this affects my DEA?
+#write_json(ranked_genes, path = paste(base_dir, "ToleranceEvo_Wenxi/Data/enrichment_analysis/lists_of_ranked_genes_", alpha_plain, "_logFC_", as.character(lfc_threshold), sep=""), pretty = T)
+```
+
+
+### Run GSEA
+The warning I get here refers to many proteins having exactly the same rank (these are the ones we see in a horizontal line in the plots produced in 5.1.) - this should be okay, since these are the genes that were not significantly differentially expressed at all - but tbh this makes it so that I cannot really get that much info from those anyway, right? So there isn't that much of a difference between this and doing the GSEA only with DE proteins, right?? Idk
+```{r}
+library(fgsea)
+fgseaRes <- fgsea(
+  pathways = kegg_genes,
+  stats = rankings,
+  minSize = 10,
+  maxSize = 500)
+
+# Save these results
+fwrite(fgseaRes, paste(base_dir, "ToleranceEvo_Wenxi/Data/enrichment_analysis/kegg_gsea_results_resistance_", alpha_plain, "_logFC_", as.character(lfc_threshold), "_enrichment_alpha_", alpha_enrichment_plain, ".tsv", sep=""))
+```
+
+### Get a volcano plot for the GSEA results
+```{r}
+fgseaRes <- as.data.frame(fread(paste(base_dir, "ToleranceEvo_Wenxi/Data/enrichment_analysis/kegg_gsea_results_tolerance_", alpha_plain, "_logFC_", as.character(lfc_threshold), "_enrichment_alpha_", alpha_enrichment_plain, ".tsv", sep="")))
+
+ggplot(data = fgseaRes, aes(x = NES, y = -log10(padj))) +
+  geom_point() +
+  geom_hline(yintercept = -log10(0.05), col = "orange", linewidth = 1) +
+  theme_light() +
+  xlab("Normalized Enrichment Score") +
+  ylab("-log10(Adjusted p-value)") +
+  labs(title = "KEGG pathways enriched with respect to tolerance") +
+  geom_label_repel(data = subset(fgseaRes, NES > 1.5 & -log10(padj) > -log10(0.05)),
+                   aes(x = NES, y = -log10(padj), label = pathway))
+```
+
+### Not too practical since pathway names are too long to fit in there, let me try a barplot:
+```{r}
+fgseaRes <- fgseaRes %>%
+  dplyr::mutate(direction = case_when(
+    NES > 0 ~ "Up-regulated",
+    NES < 0 ~ "Down-regulated",
+    TRUE    ~ "Neutral")) %>%
+  dplyr::mutate(pathway = str_replace_all(str_remove(pathway, "^[^_]*_"), "_", " "))
+
+top_pathways <- fgseaRes %>%
+  dplyr::filter(padj < 0.05) %>%
+  arrange(padj)
+
+ggplot(top_pathways, aes(x = fct_reorder(pathway, NES), y = NES, fill = direction)) +
+  geom_col() +
+  coord_flip() +   # horizontal bars
+  scale_fill_manual(values = c("Up-regulated" = "firebrick", "Down-regulated" = "steelblue")) +
+  labs(x = "Pathway",
+       y = "Normalized Enrichment Score (NES)",
+       title = "Top enriched pathways with respect to tolerance") +
+  theme_minimal(base_size = 14) +
+  theme(plot.title = element_text(size = 13))  # set smaller title font here)
+```
 
 
 

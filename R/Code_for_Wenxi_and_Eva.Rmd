@@ -1,0 +1,675 @@
+---
+title: "ToleranceEvo_main"
+author: "Álvaro Gómez Pérez"
+date: "2025-07-14"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+Libraries
+```{r}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(data.table)
+library(limpa)
+library(helperfunctions)
+library(stringr)
+library(glue)
+library(factoextra)         
+library(dendextend)
+library(staplr)
+library(circlize)
+library(ComplexHeatmap)
+library(viridis)
+library(jsonlite)
+library(wesanderson)
+library(ggrepel)
+library(forcats)
+library(qusage)
+library(fgsea)
+```
+
+Set up
+```{r}
+working_from <- "home"
+
+if (working_from == "home") {
+  base_dir = "/home/alvaro/MyStuff/"
+} else
+  if (working_from == "charite") {
+    base_dir = "C:/MyStuff/"
+  }
+
+save_files_to <- "local"
+if (save_files_to == "s") {
+  location_to_save <- "S:/AG/AG-CF-HTMS/AG-Ralser-Share/30-0156_WenxiQi-ToleranceEvo/05_DataAnalysis/11_Analysis_Alvaro/"
+} else if (save_files_to == "local") {
+  location_to_save <- paste(base_dir, "ToleranceEvo_Wenxi/", sep="")
+}
+
+
+# Significance level used for defining proteins as DE
+alpha <- 0.05
+
+# Significance level above as a plain string to use when loading or writing files
+alpha_plain <- str_replace(as.character(alpha), "\\.", "")
+
+# Separate significance level, the one used for the enrichment analysis
+alpha_enrichment <- 0.05
+
+# Significance level above as a plain string to use when loading or writing files
+alpha_enrichment_plain <- str_replace(as.character(alpha_enrichment), "\\.", "")
+
+# Log-fold change limit to be considered "biologically significant"
+lfc_threshold <- 0.5
+```
+
+Load data
+```{r}
+# Protein abundance dataset
+summarization_results <- readRDS(paste(base_dir, "ToleranceEvo_Wenxi/Data/Preprocessing_steps/protein_summarized_fully_imputed.rds", sep = ""))
+protein_mat <- summarization_results$y.protein$E
+
+# Metadata
+metadata <- as.data.frame(fread(paste(base_dir, "ToleranceEvo_Wenxi/Data/metadata/metadata_processed.txt", sep="")))
+
+# UniProt dataframe
+uniprot_db <- as.data.frame(fread(paste(base_dir, "tRNA_KOs/Data/databases/uniprotkb_proteome_UP000002311_2025_05_24.tsv", sep="")))
+```
+
+
+
+
+# 1. Initial data exploration
+## 1.1. Heatmaps
+### 1.1.1. Heatmap with Z-score based on median per protein - for all samples
+So this is basically focusing on the variability of each protein across all the samples - removing the basal "effect" of that protein?
+```{r}
+classifications <- c("Strain.Type", "Treatment", "Passage")
+
+for (classification in classifications) {
+  create_heatmap(protein_mat = protein_mat,
+               metadata = metadata,
+               annotation = "single",
+               heatmap_type = "z-score",
+               z_score_type = "standard",
+               color_palette = "viridis",
+               metadata_column_for_annotation = classification,
+               metadata_column_for_sample_name = "Sample.Name",
+               location_to_save = paste(location_to_save, "Output/Plots/heatmaps/", sep=""),
+               save_as = "png",
+               plot_name = "default",
+               heatmap_title = "All samples",
+               sample_name_size = 4,
+               cluster_columns = F)
+}
+```
+
+### 1.1.2. Separate heatmaps for each treatment group
+Since in the heatmap for all samples together, these cluster only around treatment group, I want to see, within each treatment group, do the samples cluster based on the other parameters?
+```{r}
+treatments <- unique(metadata$Treatment)[!(unique(metadata$Treatment) %in% c("QC"))]
+
+for (treatment in treatments) {
+  # Subset the protein matrix to contain only the samples in this treatment group
+  samples_to_keep <- metadata$Sample.Name[metadata$Treatment == treatment]
+  mat <- protein_mat[, colnames(protein_mat) %in% samples_to_keep]
+  
+  # Subset the metadata
+  meta <- metadata[metadata$Sample.Name %in% samples_to_keep,]
+  
+  # Produce the heatmap - by Strain.Type
+  create_heatmap(protein_mat = mat,
+                 annotation = "single",
+                 metadata = meta,
+                 heatmap_type = "z-score",
+                 z_score_type = "standard",
+                 color_palette = "viridis",
+                 metadata_column_for_annotation = "Strain.Type",
+                 metadata_column_for_sample_name = "Sample.Name",
+                 location_to_save = paste(location_to_save, "Output/Plots/heatmaps/", sep=""),
+                 save_as = "png",
+                 plot_name = paste("heatmap_z_score_standard_only_", treatment, "_annotated_by_Strain.Type", sep=""),
+                 heatmap_title = paste("Treatment group", treatment, sep=" "),
+                 cluster_columns = F,
+                 sample_name_size = 4)
+  
+  # Produce the heatmap by passage
+  create_heatmap(protein_mat = mat,
+                 annotation = "single",
+                 metadata = meta,
+                 heatmap_type = "z-score",
+                 z_score_type = "standard",
+                 color_palette = "viridis",
+                 metadata_column_for_annotation = "Passage",
+                 metadata_column_for_sample_name = "Sample.Name",
+                 location_to_save = paste(location_to_save, "Output/Plots/heatmaps/", sep=""),
+                 save_as = "png",
+                 plot_name = paste("heatmap_z_score_standard_only_", treatment, "_annotated_by_Passage", sep=""),
+                 heatmap_title = paste("Treatment group", treatment, sep=" "),
+                 cluster_columns = F,
+                 sample_name_size = 4)
+}
+```
+
+### 1.1.3. Let me actually separate this by Strain.Type and Passage at the same time
+```{r}
+treatments <- unique(metadata$Treatment)[!(unique(metadata$Treatment) %in% c("QC"))]
+
+for (treatment in treatments) {
+  # Subset the protein matrix to contain only the samples in this treatment group
+  samples_to_keep <- metadata$Sample.Name[metadata$Treatment == treatment]
+  mat <- protein_mat[, colnames(protein_mat) %in% samples_to_keep]
+  
+  # Subset the metadata
+  meta <- metadata[metadata$Sample.Name %in% samples_to_keep,]
+  
+  # Produce the heatmap - by Strain.Type
+  create_heatmap(protein_mat = mat,
+                 annotation = "double",
+                 metadata = meta,
+                 heatmap_type = "z-score",
+                 z_score_type = "standard",
+                 color_palette = "viridis",
+                 color_palette_2 = "magma",
+                 metadata_column_for_annotation = "Strain.Type",
+                 metadata_column_for_annotation_2 = "Passage",
+                 metadata_column_for_sample_name = "Sample.Name",
+                 location_to_save = paste(location_to_save, "Output/Plots/heatmaps/", sep=""),
+                 save_as = "png",
+                 plot_name = paste("heatmap_z_score_standard_only_", treatment, "_annotated_by_Strain.Type_Passage", sep=""),
+                 heatmap_title = paste("Treatment group:", treatment, sep=" "),
+                 sample_name_size = 8,
+                 cluster_columns = F)
+}
+```
+
+
+## 1.2. PCA
+I make 3 different ones, in each of them coloring by a different covariate, and then in the last one I combine treatment and passage
+```{r}
+do_pca(protein_mat,
+       metadata,
+       metadata_column_for_annotation = "Strain.Type",
+       metadata_column_for_sample_name = "Sample.Name",
+       location_to_save = paste(base_dir, "ToleranceEvo_Wenxi/Output/Plots/PCA/", sep=""),
+       save_as = "png")
+
+do_pca(protein_mat,
+       metadata,
+       metadata_column_for_annotation = "Passage",
+       metadata_column_for_sample_name = "Sample.Name",
+       location_to_save = paste(base_dir, "ToleranceEvo_Wenxi/Output/Plots/PCA/", sep=""),
+       save_as = "png")
+
+do_pca(protein_mat,
+       metadata,
+       metadata_column_for_annotation = "Treatment",
+       metadata_column_for_sample_name = "Sample.Name",
+       location_to_save = paste(base_dir, "ToleranceEvo_Wenxi/Output/Plots/PCA/", sep=""),
+       save_as = "png")
+
+metadata <- metadata %>%
+  dplyr::mutate(Treatment_Passage = paste(Treatment, Passage, sep="_"))
+
+do_pca(protein_mat, 
+       metadata,
+       metadata_column_for_annotation = "Treatment_Passage",
+       metadata_column_for_sample_name = "Sample.Name",
+       location_to_save = paste(base_dir, "ToleranceEvo_Wenxi/Output/Plots/PCA/", sep=""),
+       save_as = "png")
+```
+
+
+
+# 2. Introduce phenotypic data (resistance and tolerance)
+## 2.1. Some initial plots of the tolerance and resistance distributions
+```{r}
+# Load data
+phenotypic_data <- fread(paste(base_dir, "ToleranceEvo_Wenxi/Data/phenotypic_data/processed_phenotypic_data.tsv", sep = ""))
+phenotypic_data_all_passages <- fread(paste(base_dir, "ToleranceEvo_Wenxi/Data/phenotypic_data/processed_phenotypic_data_all_passages.tsv", sep = ""))
+
+# Histograms of RAD20 and FoG20
+## For all passages together
+ggplot(data = phenotypic_data_all_passages, aes(x = RAD20)) +              # This is the one for the RAD20
+  geom_histogram(col = "black", fill = "grey") +
+  theme_light() +
+  ylab("Number of strains") +
+  labs(title = "Distribution of RAD20 across all strains", 
+       subtitle = "All passages") +
+  coord_cartesian(xlim = c(3, 16),
+                  ylim = c(0, 12.5))
+ggplot(data = phenotypic_data_all_passages, aes(x = FoG20)) +             # This is the one for the FoG20
+  geom_histogram(col = "black", fill = "grey") +
+  theme_light() +
+  ylab("Number of strains") +
+  labs(title = "Distribution of FoG20 across all strains", 
+       subtitle = "All passages") +
+  coord_cartesian(xlim = c(0, 1),
+                  ylim = c(0, 30))
+
+## For passages 0, 4 and 7 (the ones we have proteomics data for)
+ggplot(data = subset(phenotypic_data_all_passages, Passage %in% c(0, 4, 7)), aes(x = RAD20)) +        # This is the one for the RAD20
+  geom_histogram(col = "black", fill = "grey") +
+  theme_light() +
+  ylab("Number of strains") +
+  labs(title = "Distribution of RAD20 across all strains", 
+       subtitle = "Passages 0, 4 and 7") +
+  coord_cartesian(xlim = c(3, 16),
+                  ylim = c(0, 12.5))
+ggplot(data = subset(phenotypic_data_all_passages, Passage %in% c(0, 4, 7)), aes(x = FoG20)) +        # This is the one for the FoG20
+  geom_histogram(col = "black", fill = "grey") +
+  theme_light() +
+  ylab("Number of strains") +
+  labs(title = "Distribution of FoG20 across all strains", 
+       subtitle = "Passages 0, 4 and 7") +
+  coord_cartesian(xlim = c(0, 1),
+                  ylim = c(0, 30))
+
+
+# Boxplots of RAD20 and FoG20s grouping by other variables 
+## Grouping by Strain.Type
+ggplot(data = phenotypic_data, aes(x = Strain.Type, y = RAD20, group = Strain.Type)) +
+  geom_boxplot() +
+  theme_light()
+
+ggplot(data = phenotypic_data, aes(x = Strain.Type, y = FoG20, group = Strain.Type)) +
+  geom_boxplot() +
+  theme_light()
+
+## Grouping by Passage
+ggplot(data = phenotypic_data, aes(x = Passage, y = RAD20, group = Passage)) +
+  geom_boxplot() +
+  theme_light()
+
+ggplot(data = phenotypic_data, aes(x = Passage, y = FoG20, group = Passage)) +
+  geom_boxplot() +
+  theme_light()
+
+
+
+# Look at the correlations between RAD20, FoG20, and strain type: calculate the correlations, put them into a dataframe and create a barplot. 
+strain_types <- unique(phenotypic_data_all_passages$Strain.Type)
+Strain <- c()
+Parameter <- c()
+Correlation <- c()
+
+for (i in 1:length(strain_types)) {
+  strain_type <- strain_types[i]
+  temp <- phenotypic_data_all_passages %>%
+    dplyr::filter(Strain.Type == strain_type)
+  
+  for (parameter in c("RAD20", "FoG20")) {
+    Strain <- c(Strain, strain_type)
+    Parameter <- c(Parameter, parameter)
+    Correlation <- c(Correlation, abs(cor(temp$Passage, temp[[parameter]])))
+  }
+}
+
+correlations_to_passage <- data.frame(Strain, Parameter, Correlation)
+
+ggplot(correlations_to_passage, aes(x = Parameter, y = Correlation, fill = Strain)) +
+  geom_col(position = "dodge", col = "grey") +
+  theme_light() +
+  coord_cartesian(ylim = c(0, 1)) +
+  labs(title = "Correlation between Strain.Type and tolerance or resistance") +
+  scale_fill_manual(values= wes_palette("FantasticFox1", n = 3))
+```
+
+
+## 2.2. Heatmaps - sorting by resistance and tolerance levels
+### 2.3.1. First of all, add RAD20 and FoG20 columns to the metadata. I am also adding an extra column, which I am calling "Resistance" - this one is just the -RAD20, and it's the one I use in order to fit the models for differential expression, so that the interpretation of the coefficients is more straightforward. This is, since the radius is inversely proportional to the resistance, I use this negative sign so that the proteins that come out as up-regulated are the ones that relate to high resistance, and the down-regulated ones correspond to low resistance, and not the other way around. 
+```{r}
+temp <- phenotypic_data %>%
+  dplyr::select(Sample.Name, RAD20, FoG20)
+metadata <- left_join(metadata, temp, by = "Sample.Name")%>%
+  dplyr::mutate(Resistance = -RAD20)
+```
+
+### 2.2.2. All samples together
+```{r}
+# Need to remove QCs first (otherwise there are NAs in the annotation column)
+protein_mat_no_QCs <- protein_mat[, !grepl("QC", colnames(protein_mat))]
+
+# By RAD20
+create_heatmap(protein_mat = protein_mat_no_QCs,
+             metadata = metadata,
+             annotation = "single",
+             heatmap_type = "z-score",
+             z_score_type = "standard",
+             color_palette = "viridis",
+             metadata_column_for_annotation = "RAD20",
+             metadata_column_for_sample_name = "Sample.Name",
+             location_to_save = paste(location_to_save, "Output/Plots/heatmaps/phenotypic/", sep=""),
+             save_as = "png",
+             plot_name = "default",
+             heatmap_title = "All samples",
+             sample_name_size = 4,
+             cluster_columns = F)
+
+# By FoG20
+create_heatmap(protein_mat = protein_mat_no_QCs,
+             metadata = metadata,
+             annotation = "single",
+             heatmap_type = "z-score",
+             z_score_type = "standard",
+             color_palette = "viridis",
+             metadata_column_for_annotation = "FoG20",
+             metadata_column_for_sample_name = "Sample.Name",
+             location_to_save = paste(location_to_save, "Output/Plots/heatmaps/phenotypic/", sep=""),
+             save_as = "png",
+             plot_name = "default",
+             heatmap_title = "All samples",
+             sample_name_size = 4,
+             cluster_columns = F)
+```
+
+### 2.2.3. Separate by treatment groups
+```{r}
+treatments <- unique(metadata$Treatment)[!(unique(metadata$Treatment) %in% c("QC"))]
+
+for (treatment in treatments) {
+  # Subset the protein matrix to contain only the samples in this treatment group
+  samples_to_keep <- metadata$Sample.Name[metadata$Treatment == treatment]
+  mat <- protein_mat[, colnames(protein_mat) %in% samples_to_keep]
+  
+  # Subset the metadata
+  meta <- metadata[metadata$Sample.Name %in% samples_to_keep,]
+  
+  # Produce the heatmap - by RAD20
+  create_heatmap(protein_mat = mat,
+                 annotation = "single",
+                 metadata = meta,
+                 heatmap_type = "z-score",
+                 z_score_type = "standard",
+                 color_palette = "viridis",
+                 metadata_column_for_annotation = "RAD20",
+                 metadata_column_for_sample_name = "Sample.Name",
+                 location_to_save = paste(location_to_save, "Output/Plots/heatmaps/phenotypic/", sep=""),
+                 save_as = "png",
+                 plot_name = paste("heatmap_z_score_standard_only_", treatment, "_annotated_by_RAD20", sep=""),
+                 heatmap_title = paste("Treatment group", treatment, sep=" "),
+                 cluster_columns = F,
+                 sample_name_size = 4)
+  
+  # Produce the heatmap - by FoG20
+  create_heatmap(protein_mat = mat,
+                 annotation = "single",
+                 metadata = meta,
+                 heatmap_type = "z-score",
+                 z_score_type = "standard",
+                 color_palette = "viridis",
+                 metadata_column_for_annotation = "FoG20",
+                 metadata_column_for_sample_name = "Sample.Name",
+                 location_to_save = paste(location_to_save, "Output/Plots/heatmaps/phenotypic/", sep=""),
+                 save_as = "png",
+                 plot_name = paste("heatmap_z_score_standard_only_", treatment, "_annotated_by_FoG20", sep=""),
+                 heatmap_title = paste("Treatment group", treatment, sep=" "),
+                 cluster_columns = F,
+                 sample_name_size = 4)
+  
+    # Produce the heatmap - by RAD20 and passage
+  create_heatmap(protein_mat = mat,
+                 annotation = "double",
+                 metadata = meta,
+                 heatmap_type = "z-score",
+                 z_score_type = "standard",
+                 color_palette = "viridis",
+                 metadata_column_for_annotation = "Passage",
+                 metadata_column_for_annotation_2 = "RAD20",
+                 metadata_column_for_sample_name = "Sample.Name",
+                 location_to_save = paste(location_to_save, "Output/Plots/heatmaps/phenotypic/", sep=""),
+                 save_as = "png",
+                 plot_name = paste("heatmap_z_score_standard_only_", treatment, "_annotated_by_RAD20_and_passage", sep=""),
+                 heatmap_title = paste("Treatment group", treatment, sep=" "),
+                 cluster_columns = F,
+                 sample_name_size = 4)
+  
+  # Produce the heatmap - by FoG20 and passage
+  create_heatmap(protein_mat = mat,
+                 annotation = "double",
+                 metadata = meta,
+                 heatmap_type = "z-score",
+                 z_score_type = "standard",
+                 color_palette = "viridis",
+                 metadata_column_for_annotation = "Passage",
+                 metadata_column_for_annotation_2 = "FoG20",
+                 metadata_column_for_sample_name = "Sample.Name",
+                 location_to_save = paste(location_to_save, "Output/Plots/heatmaps/phenotypic/", sep=""),
+                 save_as = "png",
+                 plot_name = paste("heatmap_z_score_standard_only_", treatment, "_annotated_by_FoG20_and_passage", sep=""),
+                 heatmap_title = paste("Treatment group", treatment, sep=" "),
+                 cluster_columns = F,
+                 sample_name_size = 4)
+}
+```
+
+
+
+
+# 3. Differential expression analysis
+## 3.1. Perform DE analysis
+Originally, I was doing this for the whole dataset together, but as suggested during the microbiology meeting on 20.10.2025, I now separate the dataset per treatment (since this is the variable that has the most effect on the proteomes) and then do differential expression separately for each of these sub-datasets. 
+```{r}
+# First of all, need to remove the QC samples from the protein abundance dataset
+raw_data <- protein_mat[, !grepl("QC", colnames(protein_mat))]
+
+# Since we are going to start an iteration before, we first create an empty list where we can save the output of each of the iterations
+list_for_de_results <- list()
+
+
+
+# Iterate over the 3 treatments
+treatments <- unique(metadata$Treatment)[!unique(metadata$Treatment) %in% c("QC")]          # grab the treatment names to iterate over them
+
+for (i in 1:length(treatments)) {                                                           # iterate over treatment groups
+  treatment <- treatments[i]
+  samples_to_select <- metadata$Sample.Name[metadata$Treatment == treatment]              # grab the names of the samples in this treatment group
+  protein_data_treatment <- protein_mat[, colnames(protein_mat) %in% samples_to_select]   # remove all samples from the protein dataset that don't belong to this treatment group
+  
+  # Make sure the order of the columns in the protein abundance dataset matches the order of the rows in the metadata
+  metadata_sorted <- metadata[match(colnames(protein_data_treatment), metadata$Sample.Name), ] 
+  
+  
+  # FOR RESISTANCE
+  # Create a design matrix - this is the matrix that tells the DE algorithm which samples belong to the same group
+  design <- model.matrix(~ Resistance + Strain.Type, data = metadata_sorted)
+  
+  # Fit model
+  fit <- lmFit(protein_data_treatment, design)
+  fit <- eBayes(fit)
+  
+  # Extract results for the 'Resistance' coefficient of the fitted model
+  resistance_results <- topTable(fit, coef = "Resistance", number = Inf, adjust.method = "BH")
+  
+  # The protein IDs are in the rownames now, let's put them in a column instead
+  resistance_results <- tibble::rownames_to_column(resistance_results, var = "protein")
+  
+  # Now we save this dataframe with the results of the DE analysis to the empty list we created above, while specifying the name of the parameter used and the treatment
+  list_for_de_results[[paste(treatment, "_resistance", sep="")]] <- resistance_results
+  
+  
+  # FOR TOLERANCE
+  # Create a design matrix - this is the matrix that tells the DE algorithm which samples belong to the same group
+  design <- model.matrix(~ FoG20 + Strain.Type, data = metadata_sorted)
+  
+  # Fit model
+  fit <- lmFit(protein_data_treatment, design)
+  fit <- eBayes(fit)
+  
+  # Extract results for the 'Resistance' coefficient of the fitted model
+  tolerance_results <- topTable(fit, coef = "FoG20", number = Inf, adjust.method = "BH")
+  
+  # The protein IDs are in the rownames now, let's put them in a column instead
+  tolerance_results <- tibble::rownames_to_column(tolerance_results, var = "protein")
+  
+  # Now we save this dataframe with the results of the DE analysis to the empty list we created above, while specifying the name of the parameter used and the treatment
+  list_for_de_results[[paste(treatment, "_tolerance", sep="")]] <- tolerance_results
+}
+```
+
+## 3.2. Create a volcano plot for each of the 6 results from differential analysis
+```{r}
+# We iterate over the dataframes in the list, each of them contains the reults from DEA for one of the treatments for tolerance or resistance, and we create the same plot for all of them
+for (i in 1:length(list_for_de_results)) {
+  df <- list_for_de_results[[i]]
+  name <- names(list_for_de_results)[i]
+  
+  p <- ggplot(data = df, aes(x = logFC, y = -log10(adj.P.Val))) +
+              geom_point() +
+              theme_light() +
+              geom_hline(yintercept = -log10(0.05), col = "orange", linewidth = 1) +      # this adds the horizontal line at p-value = 0.05
+              labs(title = glue("Differentially abundant proteins for {name}")) +          # this creates the plot title
+              geom_vline(xintercept = mean(df$logFC)+2*sd(df$logFC), col = "orange", linewidth = 1) + # this line and the following create the vertical lines, for a logFC threshold
+              geom_vline(xintercept = mean(df$logFC)-2*sd(df$logFC), col = "orange", linewidth = 1)   # since this threshold would be different across these plots, I set it at the +-2*SD of the logFC distribution   
+  print(p)
+}
+```
+
+
+
+
+# 4. GSEA
+Load and prepare data
+```{r}
+# Full Entrez ID dataframe, with all genes
+entrez_db <- as.data.frame(fread(paste(base_dir, "ToleranceEvo_Wenxi/Data/enrichment_analysis/databases/uniprotkb_proteome_UP000000559_2025_10_19.tsv", sep="")))
+
+# Get the corresponding KEGG IDs to the UniProt gene names, since the GSEA is performed in terms of the KEGG IDs
+temp_entrez <- entrez_db %>%
+  dplyr::select(Entry, GeneID) %>%
+  dplyr::rename(uniprot = Entry) %>%
+  dplyr::mutate(GeneID = substr(GeneID, 1, nchar(GeneID)-1))
+
+# Process .gmt file to turn it into the list of gene set vectors we need for gsea()
+gmt <- read.gmt(paste(base_dir, "ToleranceEvo_Wenxi/Data/enrichment_analysis/databases/20251019_kegg_cal.gmt", sep=""))
+gmt$term <- as.character(gmt$term)
+
+# Get a simple vector with the Entrez IDs of the proteins we detect
+proteins_detected <- temp_entrez$GeneID
+
+# Get our list of vectors, where each vector is a KEGG pathway and the terms in it are the genes related to it - keeping only genes which are detected in our dataset
+kegg_genes <- list()
+pathways <- names(gmt)
+
+kegg_genes <- lapply(names(gmt), function(pathway) {
+  intersect(gmt[[pathway]], proteins_detected)
+})
+names(kegg_genes) <- names(gmt)
+```
+
+
+## 3.1. Prepare ranked gene lists
+For now, my score/rank is: sign(logFC)*(-log10(adj.P.Val))
+```{r}
+# Since we are going to start an iteration before, we first create an empty list where we can save the output of each of the iterations
+list_for_gsea_results <- list()
+
+
+# Iterate over the dataframes on the results list and do GSEA for all of them
+for (i in 1:length(list_for_de_results)) {
+  temp <- list_for_de_results[[i]]
+  name <- names(list_for_de_results)[i]
+  
+  # Rename the column with the protein names so that we can match with the UniProt dataset modified above
+  temp <- temp %>%
+    dplyr::rename(uniprot = protein) %>%
+    left_join(temp_entrez, by = "uniprot")
+  
+  # Using as score the [-log10(p-value)*sign of the logFC], calculate this for every row in the dataset - this is, for every protein
+  # This score contains the information from both the p-value and the logFC - there are many different ones that can be used, but this is a kind of standard one
+  rankings <- sign(temp$logFC)*(-log10(temp$adj.P.Val))
+  names(rankings) <- temp$GeneID
+  rankings <- sort(rankings, decreasing = TRUE)
+  
+  # Sometimes, some genes have such low p-values that the signed pval is +- inf, we need to change it to the maximum * constant to avoid problems with fgsea
+  max_ranking <- max(rankings[is.finite(rankings)])
+  min_ranking <- min(rankings[is.finite(rankings)])
+  rankings <- replace(rankings, rankings > max_ranking, max_ranking * 10)
+  rankings <- replace(rankings, rankings < min_ranking, min_ranking * 10)
+  rankings <- sort(rankings, decreasing = TRUE)                                   # sort genes by ranking
+  
+  # Get rid of rankings with emtpy names and with repeated names
+  length(rankings)
+  rankings <- rankings[!is.na(names(rankings)) & names(rankings) != ""]
+  rankings <- rankings[!duplicated(names(rankings))]
+  length(rankings)
+  
+  
+  # Run GSEA
+  fgseaRes <- fgsea(
+      pathways = kegg_genes,
+      stats = rankings,
+      minSize = 10,
+      maxSize = 500)
+  
+  # Save to the list
+  list_for_gsea_results[[name]] <- fgseaRes
+}
+```
+
+
+
+### Barplots for GSEA results
+```{r}
+for (i in 1:length(list_for_gsea_results)) {
+  fgseaRes <- list_for_gsea_results[[i]]
+  name <- names(list_for_gsea_results)[i]
+  
+  # Create a new column which marks each patwhay as up- or down-regulated based on the sign of the NES (this is kind of the equivalent of the logFC in the DEA)
+  # Also modify the name of the pathway, remove the ugly stuff at the beginning and substitute "_" for " ". 
+  fgseaRes <- fgseaRes %>%
+    dplyr::mutate(direction = case_when(NES > 0 ~ "Up-regulated",
+                                        NES < 0 ~ "Down-regulated",
+                                        TRUE    ~ "Neutral")) %>%
+    dplyr::mutate(pathway = str_replace_all(str_remove(pathway, "^[^_]*_"), "_", " "))
+  
+  # Grab the top pathways, filtering based on their p-values - BE CAREFUL!: we are not filtering based on NES (kind of effect size), so need to keep an eye on that, it could be that we have significant p-values but the NES is so small that it is not biologically relevant
+  top_pathways <- fgseaRes %>%
+    dplyr::filter(padj < alpha_enrichment) %>%
+    arrange(padj)
+  
+  # Create the barplot
+  p <- ggplot(top_pathways, aes(x = fct_reorder(pathway, NES), y = NES, fill = direction)) +             #fct_reorder() orders the bars based on NES
+              geom_col() +
+              coord_flip() +                                                                                  # horizontal bars instead of vertical
+              scale_fill_manual(values = c("Up-regulated" = "firebrick", "Down-regulated" = "steelblue")) +
+              labs(x = "Pathway",
+                   y = "Normalized Enrichment Score (NES)",
+                   title = glue("Top enriched pathways for {name}")) +
+              theme_minimal(base_size = 11) +
+              theme(plot.title = element_text(size = 13))                                                     # set smaller title font here
+  print(p)
+}
+```
+
+
+
+
+
+
+
+EXTRA: This is how you download the file with the KEGG annotation in order to do the GSEA. I have already sent you this file (a .gmt file), but in case you needed to download an updated version, this is how it is done. 
+This is described in a bit more detail by https://biostatsquid.com/fgsea-tutorial-gsea/ and https://www.researchgate.net/post/How_i_can_get_a_list_of_KEGG_pathways_and_its_list_of_genes. 
+```{r}
+#library("KEGGREST")
+#library("EnrichmentBrowser")
+#
+##step2: check and obtain a list of entry identifiers (in this case: cal) and associated definition for a given database or a given set of database entries.
+#MRSA252 <- keggList("cal")
+#
+##step 3: download the pathways of that organism:
+#sarpathway <- downloadPathways("cal")
+#
+##step 4: retrieve gene sets for an organism from databases such as GO and KEGG:
+#sar <- getGenesets(org = "cal", db = "kegg", cache = TRUE, return.type="list")
+#
+##step5: Parse and write the gene sets to a flat text file in GMT format for other pathway enrichment analysis programs (e.g., GSEA). The numbers in the name of the file ("20251019") is #the date on which it was downloaded, you should update this if you download it again later.
+#writeGMT(sar, gmt.file = "~/your_desired_location/20251019_kegg_cal.gmt")
+```
+
