@@ -111,45 +111,45 @@ Performed with limpa. Filtering and pre-processing at the precursor level was do
 
 ## 1.1. Peptide to protein summarization - NOT USED AT THE MOMENT SINCE I ALREADY DID IT ONCE
 ```{r}
-# Prepare protein ID vector matching the precursor order in the rows of the raw data, setting the order based on that of the rows of the precursor rawdata - this is, I create a vector with the same length as the columns of this dataframe, where each entry is the name of the protein corresponding to the precursor in that row in the dataframe. 
-precursor_protein_correspondence <- precursor_protein_correspondence %>%
-  dplyr::filter(Precursor.Id %in% rownames(raw_prec_data))
-precursor_protein_correspondence <- precursor_protein_correspondence[match(rownames(raw_prec_data), precursor_protein_correspondence$Precursor.Id),]
-
-
-# Remove QC samples
-raw_prec_data <- raw_prec_data[, !(grepl("QC", colnames(raw_prec_data)))]
-
-# Run summarization to protein level - this is the algorithm that takes the precursor abundances and returns protein abundances
-summarization_results <- protein_summarize(raw_data = raw_prec_data,
-                                           protein_ids = precursor_protein_correspondence$Protein.Ids,
-                                           method = "limpa")
-protein_mat <- summarization_results$y.protein$E
-
-# Remove proteins which are present in less than 65% of the samples per strain - NOT NECESSARY RIGHT NOW SINCE I'M USING FULLY IMPUTED DATASET, but might be necessary if I change my pre-processing
-#protein_mat <- as.data.frame(protein_mat)
-#protein_mat$Precursor.Id <- rownames(protein_mat)
-#protein_mat <- pivot_longer(protein_mat,                                                  # Switch to longer format for filtering
-#                                 cols = !Precursor.Id,
-#                                 names_to = "Strain.Name",
-#                                 values_to = "Protein.Intensity") %>%
-#  dplyr::filter(!is.na(Protein.Intensity)) %>%                                            # Remove rows with NAs, otherwise this filtering doesn't work #(it's based on the     #                                                                                         row being present or not, not on its #contents)
-#  remove_uncommon_precursors_per_strain(percentage_of_samples_per_precursor = 0.65) %>%   # Filter
-#  pivot_wider(names_from = "Strain.Name",                                                 # Set back to wide format
-#              values_from = "Protein.Intensity") %>%
-#  as.data.frame() %>%
-#  set_column_as_rownames("Precursor.Id") 
-#sum(is.na(protein_mat))
-#sum(is.na(protein_mat))/(ncol(protein_mat)*nrow(protein_mat))
-
-# Save protein level dataset so that we don't need to run summarization every time
-saveRDS(summarization_results, paste(base_dir, "ToleranceEvo_Wenxi/Data/Preprocessing_steps/protein_summarized_fully_imputed.rds", sep = ""))
-
-# Quickly look at the distribution of the protein abundances
-protein_abundances_long <- pivot_longer(as.data.frame(protein_mat), cols = everything(), names_to = "Sample.Name", values_to = "Abundance")
-ggplot(data = protein_abundances_long, aes(x = Sample.Name, y = Abundance)) +
-  geom_boxplot() +
-  theme_light()
+## Prepare protein ID vector matching the precursor order in the rows of the raw data, setting the order based on that of the rows of the precursor rawdata - this is, I create a vector #with the same length as the columns of this dataframe, where each entry is the name of the protein corresponding to the precursor in that row in the dataframe. 
+#precursor_protein_correspondence <- precursor_protein_correspondence %>%
+#  dplyr::filter(Precursor.Id %in% rownames(raw_prec_data))
+#precursor_protein_correspondence <- precursor_protein_correspondence[match(rownames(raw_prec_data), precursor_protein_correspondence$Precursor.Id),]
+#
+#
+## Remove QC samples
+#raw_prec_data <- raw_prec_data[, !(grepl("QC", colnames(raw_prec_data)))]
+#
+## Run summarization to protein level - this is the algorithm that takes the precursor abundances and returns protein abundances
+#summarization_results <- protein_summarize(raw_data = raw_prec_data,
+#                                           protein_ids = precursor_protein_correspondence$Protein.Ids,
+#                                           method = "limpa")
+#protein_mat <- summarization_results$y.protein$E
+#
+## Remove proteins which are present in less than 65% of the samples per strain - NOT NECESSARY RIGHT NOW SINCE I'M USING FULLY IMPUTED DATASET, but might be necessary if I change my #pre-processing
+##protein_mat <- as.data.frame(protein_mat)
+##protein_mat$Precursor.Id <- rownames(protein_mat)
+##protein_mat <- pivot_longer(protein_mat,                                                  # Switch to longer format for filtering
+##                                 cols = !Precursor.Id,
+##                                 names_to = "Strain.Name",
+##                                 values_to = "Protein.Intensity") %>%
+##  dplyr::filter(!is.na(Protein.Intensity)) %>%                                            # Remove rows with NAs, otherwise this filtering doesn't work #(it's based on the     #     #                                                                                    row being present or not, not on its #contents)
+##  remove_uncommon_precursors_per_strain(percentage_of_samples_per_precursor = 0.65) %>%   # Filter
+##  pivot_wider(names_from = "Strain.Name",                                                 # Set back to wide format
+##              values_from = "Protein.Intensity") %>%
+##  as.data.frame() %>%
+##  set_column_as_rownames("Precursor.Id") 
+##sum(is.na(protein_mat))
+##sum(is.na(protein_mat))/(ncol(protein_mat)*nrow(protein_mat))
+#
+## Save protein level dataset so that we don't need to run summarization every time
+#saveRDS(summarization_results, paste(base_dir, "ToleranceEvo_Wenxi/Data/Preprocessing_steps/protein_summarized_fully_imputed.rds", sep = ""))
+#
+## Quickly look at the distribution of the protein abundances
+#protein_abundances_long <- pivot_longer(as.data.frame(protein_mat), cols = everything(), names_to = "Sample.Name", values_to = "Abundance")
+#ggplot(data = protein_abundances_long, aes(x = Sample.Name, y = Abundance)) +
+#  geom_boxplot() +
+#  theme_light()
 ```
 
 
@@ -237,13 +237,6 @@ rotate_pdf(
 )
 ```
 
-Filter out proteins with low variability, towards the heatmaps - NOT USED AT THE MOMENT
-```{r}
-#protein_variability <- apply(protein_mat, 1, function(x) var(x, na.rm = T))
-#hist(protein_variability)
-#most_variable_proteins <- rownames(protein_mat)[protein_variability > 0.4]
-#trna_ko_high_var <- protein_mat[rownames(protein_mat) %in% most_variable_proteins,]
-```
 
 
 ## 1.3. Heatmaps
@@ -614,22 +607,6 @@ for (treatment in treatments) {
 }
 ```
 
-
-## 2.3. Classify strains into high or low tolerance and resistance based on these heatmaps, in order to interpret proteomics results based on this. We add this as a new column to the metadata. Current thresholds for classification come from the heatmaps, not anymore from Wenxi. In any case, we are not confident on either of them at all, will show this in the microbiology meeting and see what people think about them. 
-Tbh I think that classifying them like this, taking into account how homogeneous the heatmaps look, is not a great idea, but oh well. 
-```{r}
-# Come up with the values
-phenotypic_data <- phenotypic_data %>%
-  dplyr::mutate(Resistance = case_when(RAD20 <= 10.672 ~ "High",                # This is based on the heatmap for pellet annotated by RAD20
-                                       RAD20 > 10.672 ~ "Low"),
-                Tolerance = case_when(FoG20 <= 0.33 ~ "Low",                    # This is based on the heatmap for pellet annotated by FoG20 
-                                      FoG20 > 0.33 ~ "High"))
-
-# Add these new variables to the metadata
-temp <- phenotypic_data %>%
-  dplyr::select(Sample.Name, RAD20, FoG20, Resistance, Tolerance)
-metadata <- left_join(metadata, temp, by = "Sample.Name")
-``` 
 
 
 
@@ -1109,6 +1086,10 @@ fit <- eBayes(fit)
 
 # Extract results for the 'Resistance' coefficient
 resistance_results <- topTable(fit, coef = "Resistance", number = Inf, adjust.method = "BH")
+resistance_results_strain_type_tolerant <- topTable(fit, coef = "Strain.TypeHigh tolerance", number = Inf, adjust.method = "BH")
+resistance_results_strain_type_lab <- topTable(fit, coef = "Strain.TypeLab strain", number = Inf, adjust.method = "BH")
+resistance_results_treatment_liquid <- topTable(fit, coef = "TreatmentLiquid", number = Inf, adjust.method = "BH")
+resistance_results_treatment_pellet <- topTable(fit, coef = "TreatmentPellet", number = Inf, adjust.method = "BH")
 
 # Add protein IDs
 resistance_results <- tibble::rownames_to_column(resistance_results, var = "protein")
@@ -1143,7 +1124,7 @@ ggplot(data = resistance_results, aes(x = logFC, y = -log10(adj.P.Val))) +
 
 
 
-# Correlation heatmap
+# Correlation heatmap - #TODO: STILL NEED TO LOOK INTO HOW TO MAKE THIS BETTER!
 ## Select top positively and negatively correlated proteins
 top_pos <- resistance_results %>%
   arrange(desc(logFC)) %>%
@@ -1207,6 +1188,16 @@ Heatmap(
 
 ```
 
+Check how important Strain.Type and Treatment are in fitting the model
+```{r}
+hist(resistance_results$adj.P.Val, main = "Resistance adj. p-values")
+hist(resistance_results_strain_type_tolerant$adj.P.Val, main = "Tolerant strain adj. p-values")
+hist(resistance_results_strain_type_lab$adj.P.Val,      main = "Lab strain adj. p-values")
+hist(resistance_results_treatment_liquid$adj.P.Val,     main = "Liquid treatment adj. p-values")
+hist(resistance_results_treatment_pellet$adj.P.Val,     main = "Pellet treatment adj. p-values")
+```
+
+
 For tolerance
 ```{r}
 raw_data <- protein_mat[, !grepl("QC", colnames(protein_mat))]
@@ -1226,6 +1217,10 @@ fit <- eBayes(fit)
 
 # Extract results for the 'FoG20' coefficient
 FoG20_results <- topTable(fit, coef = "FoG20", number = Inf, adjust.method = "BH")
+FoG20_results_strain_type_tolerant <- topTable(fit, coef = "Strain.TypeHigh tolerance", number = Inf, adjust.method = "BH")
+FoG20_results_strain_type_lab <- topTable(fit, coef = "Strain.TypeLab strain", number = Inf, adjust.method = "BH")
+FoG20_results_treatment_liquid <- topTable(fit, coef = "TreatmentLiquid", number = Inf, adjust.method = "BH")
+FoG20_results_treatment_pellet <- topTable(fit, coef = "TreatmentPellet", number = Inf, adjust.method = "BH")
 
 # Add protein IDs
 FoG20_results <- tibble::rownames_to_column(FoG20_results, var = "protein")
@@ -1317,6 +1312,16 @@ Heatmap(
 )
 
 ```
+
+Check how important Strain.Type and Treatment are in fitting the model
+```{r}
+hist(FoG20_results$adj.P.Val, main = "Tolerance adj. p-values")
+hist(FoG20_results_strain_type_tolerant$adj.P.Val, main = "Tolerant strain adj. p-values")
+hist(FoG20_results_strain_type_lab$adj.P.Val, main = "Lab strain adj. p-values")
+hist(FoG20_results_treatment_liquid$adj.P.Val, main = "Liquid treatment adj. p-values")
+hist(FoG20_results_treatment_pellet$adj.P.Val, main = "Pellet treatment adj. p-values")
+```
+
 
 Some sanity checks - STILL NEED TO GO THROUGH THIS
 ```{r}
@@ -1414,20 +1419,20 @@ length(rankings)
 ### Download KEGG gene lists (according to https://www.researchgate.net/post/How_i_can_get_a_list_of_KEGG_pathways_and_its_list_of_genes)
 DO NOT RUN AGAIN - I used this to download the .gmt file, I just need to load it, but I left this code here in case I want to know how I did it
 ```{r}
-library("KEGGREST")
-library("EnrichmentBrowser")
-
-#step2: check and obtain a list of entry identifiers (in this case: sce) and associated definition for a given database r a given set of database entries.
-MRSA252 <- keggList("cal")
-
-#step 3: download the pathways of that organism:
-sarpathway <- downloadPathways("cal")
-
-#step 4: retrieve gene sets for an organism from databases such as GO and KEGG:
-sar <- getGenesets(org = "cal", db = "kegg", cache = TRUE, return.type="list")
-
-#step5: Parse and write the gene sets to a flat text file in GMT format for other pathway enrichment analysis programs (e.g., GSEA):
-writeGMT(sar, gmt.file = paste(base_dir, "ToleranceEvo_Wenxi/Data/enrichment_analysis/databases/20251019_kegg_cal.gmt", sep=""))
+#library("KEGGREST")
+#library("EnrichmentBrowser")
+#
+##step2: check and obtain a list of entry identifiers (in this case: sce) and associated definition for a given database r a given set of database entries.
+#MRSA252 <- keggList("cal")
+#
+##step 3: download the pathways of that organism:
+#sarpathway <- downloadPathways("cal")
+#
+##step 4: retrieve gene sets for an organism from databases such as GO and KEGG:
+#sar <- getGenesets(org = "cal", db = "kegg", cache = TRUE, return.type="list")
+#
+##step5: Parse and write the gene sets to a flat text file in GMT format for other pathway enrichment analysis programs (e.g., GSEA):
+#writeGMT(sar, gmt.file = paste(base_dir, "ToleranceEvo_Wenxi/Data/enrichment_analysis/databases/20251019_kegg_cal.gmt", sep=""))
 ```
 
 ### Process .gmt file to turn it into the list of gene set vectors we need for gsea()
@@ -1503,408 +1508,6 @@ ggplot(top_pathways, aes(x = fct_reorder(pathway, NES), y = NES, fill = directio
   theme_minimal(base_size = 14) +
   theme(plot.title = element_text(size = 13))  # set smaller title font here)
 ```
-
-
-
-
-
-
-
-
-
-## 3.1. Prepare ranked gene lists
-For now, my score/rank is: sign(logFC)*(-log10(adj.P.Val))
-```{r}
-# Get the corresponding KEGG IDs to these UniProt gene names, since the GSEA is performed in terms of those
-temp_entrez <- entrez_db %>%
-  dplyr::select(Entry, GeneID) %>%
-  dplyr::rename(uniprot = Entry) %>%
-  dplyr::mutate(GeneID = substr(GeneID, 1, nchar(GeneID)-1))
-
-resistance_results <- resistance_results %>%
-  dplyr::rename(uniprot = protein) %>%
-  left_join(temp_entrez, by = "uniprot")
-
-# Using as score the -log10(p-value)*sign of the logFC
-rankings <- sign(resistance_results$logFC)*(-log10(resistance_results$adj.P.Val))
-names(rankings) <- resistance_results$GeneID
-rankings <- sort(rankings, decreasing = TRUE)
-
-# Plot
-plot(rankings)
-
-# Check max and min - to see if there is a need to correct for -Inf and +Inf - commented out, I don't think it's necessary
-#print(max(rankings))
-#print(min(rankings))
-
-# Some genes have such low p values that the signed pval is +- inf, we need to change it to the maximum * constant to avoid problems with fgsea
-# (this part is copy pasted from the link)
-max_ranking <- max(rankings[is.finite(rankings)])
-min_ranking <- min(rankings[is.finite(rankings)])
-rankings <- replace(rankings, rankings > max_ranking, max_ranking * 10)
-rankings <- replace(rankings, rankings < min_ranking, min_ranking * 10)
-rankings <- sort(rankings, decreasing = TRUE)                                   # sort genes by ranking
-
-# Get rid of rankings with emtpy names and with repeated names
-length(rankings)
-rankings <- rankings[!is.na(names(rankings)) & names(rankings) != ""]
-rankings <- rankings[!duplicated(names(rankings))]
-length(rankings)
-
-
-# Save this ranked lists so that I can use them later to pick the top 50 proteins in each strain, to look at the overlaps between major strains within families in a more unbiased manner - not really feasible for now since the distribution of the scores for the vast majority of strains is pretty much flat. I wonder how much this affects my DEA?
-#write_json(ranked_genes, path = paste(base_dir, "ToleranceEvo_Wenxi/Data/enrichment_analysis/lists_of_ranked_genes_", alpha_plain, "_logFC_", as.character(lfc_threshold), sep=""), pretty = T)
-```
-
-
-### Run GSEA
-The warning I get here refers to many proteins having exactly the same rank (these are the ones we see in a horizontal line in the plots produced in 5.1.) - this should be okay, since these are the genes that were not significantly differentially expressed at all - but tbh this makes it so that I cannot really get that much info from those anyway, right? So there isn't that much of a difference between this and doing the GSEA only with DE proteins, right?? Idk
-```{r}
-library(fgsea)
-fgseaRes <- fgsea(
-  pathways = kegg_genes,
-  stats = rankings,
-  minSize = 10,
-  maxSize = 500)
-
-# Save these results
-fwrite(fgseaRes, paste(base_dir, "ToleranceEvo_Wenxi/Data/enrichment_analysis/kegg_gsea_results_resistance_", alpha_plain, "_logFC_", as.character(lfc_threshold), "_enrichment_alpha_", alpha_enrichment_plain, ".tsv", sep=""))
-```
-
-### Get a volcano plot for the GSEA results
-```{r}
-fgseaRes <- as.data.frame(fread(paste(base_dir, "ToleranceEvo_Wenxi/Data/enrichment_analysis/kegg_gsea_results_tolerance_", alpha_plain, "_logFC_", as.character(lfc_threshold), "_enrichment_alpha_", alpha_enrichment_plain, ".tsv", sep="")))
-
-ggplot(data = fgseaRes, aes(x = NES, y = -log10(padj))) +
-  geom_point() +
-  geom_hline(yintercept = -log10(0.05), col = "orange", linewidth = 1) +
-  theme_light() +
-  xlab("Normalized Enrichment Score") +
-  ylab("-log10(Adjusted p-value)") +
-  labs(title = "KEGG pathways enriched with respect to tolerance") +
-  geom_label_repel(data = subset(fgseaRes, NES > 1.5 & -log10(padj) > -log10(0.05)),
-                   aes(x = NES, y = -log10(padj), label = pathway))
-```
-
-### Not too practical since pathway names are too long to fit in there, let me try a barplot:
-```{r}
-fgseaRes <- fgseaRes %>%
-  dplyr::mutate(direction = case_when(
-    NES > 0 ~ "Up-regulated",
-    NES < 0 ~ "Down-regulated",
-    TRUE    ~ "Neutral")) %>%
-  dplyr::mutate(pathway = str_replace_all(str_remove(pathway, "^[^_]*_"), "_", " "))
-
-top_pathways <- fgseaRes %>%
-  dplyr::filter(padj < 0.05) %>%
-  arrange(padj)
-
-ggplot(top_pathways, aes(x = fct_reorder(pathway, NES), y = NES, fill = direction)) +
-  geom_col() +
-  coord_flip() +   # horizontal bars
-  scale_fill_manual(values = c("Up-regulated" = "firebrick", "Down-regulated" = "steelblue")) +
-  labs(x = "Pathway",
-       y = "Normalized Enrichment Score (NES)",
-       title = "Top enriched pathways with respect to tolerance") +
-  theme_minimal(base_size = 14) +
-  theme(plot.title = element_text(size = 13))  # set smaller title font here)
-```
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-## 3.1. Prepare ranked gene lists
-For now, my score/rank is: sign(logFC)*(-log10(adj.P.Val))
-```{r}
-# Load list of all dataframes (one per strain) with the DE results
-da <- read_json(paste(base_dir, "ToleranceEvo_Wenxi/Data/enrichment_analysis/da_", alpha_plain, "_logFC_", as.character(lfc_threshold), ".json", sep=""), simplifyVector = T)
-
-# Now da is a collapsed dataframe with all strains, need to separate it per strain and put the resulting dataframes into a list
-da_list <- list()
-strains <- unique(da$Strain.Name)
-for (i in 1:length(strains)) {
-  strain <- strains[i]
-  temp <- da %>%
-    dplyr::filter(Strain.Name == strain)
-  da_list[[strain]] <- temp
-}
-
-# Create empty list to put the named ranked gene lists in
-ranked_genes <- list()
-number_of_proteins_with_no_Entrez_ID <- c()
-
-# Iterate over these dataframes
-for (i in 1:length(da)) {
-  temp <- da[[i]]
-  
-  # Get the corresponding Entrez IDs to these systematic gene names, since the GSEA is performed in terms of those
-  temp$Protein_stable_ID <- rownames(temp)
-  entrez_temp <- entrez_db %>%
-    dplyr::select(Protein_stable_ID, `NCBI_gene_(formerly_Entrezgene)_ID`)
-  temp <- left_join(temp, entrez_temp, by = "Protein_stable_ID")
-  rownames(temp) <- NULL
-  temp <- temp %>%
-    dplyr::select(logFC, adj.P.Val, `NCBI_gene_(formerly_Entrezgene)_ID`) %>%
-    dplyr::rename(gene_symbol = `NCBI_gene_(formerly_Entrezgene)_ID`)
-  
-  # Get rid of the proteins for which we don't have the Entrez ID (and save the count of how many of them there are, to check it's not too many) - otherwise GSEA doesn't work
-  number_of_proteins_with_no_Entrez_ID <- c(number_of_proteins_with_no_Entrez_ID, sum(is.na(temp$gene_symbol)))
-  temp <- temp %>%
-    dplyr::filter(!is.na(gene_symbol))
-  
-  # Using as score the -log10(p-value)*sign of the logFC
-  rankings <- sign(temp$logFC)*(-log10(temp$adj.P.Val))
-  names(rankings) <- temp$gene_symbol
-  rankings <- sort(rankings, decreasing = TRUE)
-  
-  # Plot
-  plot(rankings)
-  
-  # Check max and min - to see if there is a need to correct for -Inf and +Inf - commented out, I don't think it's necessary
-  #print(max(rankings))
-  #print(min(rankings))
-  
-  # Some genes have such low p values that the signed pval is +- inf, we need to change it to the maximum * constant to avoid problems with fgsea
-  # (this part is copy pasted from the link)
-  max_ranking <- max(rankings[is.finite(rankings)])
-  min_ranking <- min(rankings[is.finite(rankings)])
-  rankings <- replace(rankings, rankings > max_ranking, max_ranking * 10)
-  rankings <- replace(rankings, rankings < min_ranking, min_ranking * 10)
-  rankings <- sort(rankings, decreasing = TRUE) # sort genes by ranking
-  
-  # Add them to the list where we are saving them
-  ranked_genes[[names(da)[i]]] <- rankings
-}
-
-
-# Save this ranked lists so that I can use them later to pick the top 50 proteins in each strain, to look at the overlaps between major strains within families in a more unbiased manner - not really feasible for now since the distribution of the scores for the vast majority of strains is pretty much flat. I wonder how much this affects my DEA?
-write_json(ranked_genes, path = paste(base_dir, "tRNA_KOs/Data/enrichment_analysis/lists_of_ranked_genes_", alpha_plain, "_logFC_", as.character(lfc_threshold), sep=""),
-           pretty = T)
-```
-
-
-## 3.2. Perform GSEA with KEGG annotation - as described by https://biostatsquid.com/fgsea-tutorial-gsea/
-### Download KEGG gene lists (according to https://www.researchgate.net/post/How_i_can_get_a_list_of_KEGG_pathways_and_its_list_of_genes)
-DO NOT RUN AGAIN - I used this to download the .gmt file, I just need to load it, but I left this code here in case I want to know how I did it
-```{r}
-#BiocManager::install("KEGGREST")
-#BiocManager::install("EnrichmentBrowser")
-#library("KEGGREST")
-#library("EnrichmentBrowser")
-#
-##step2: check and obtain a list of entry identifiers (in this case: sce) and associated definition for a given database or a given set of database entries.
-#MRSA252 <- keggList("sce")
-#
-##step 3: download the pathways of that organism:
-#sarpathway <- downloadPathways("sce")
-#
-##step 4: retrieve gene sets for an organism from databases such as GO and KEGG:
-#sar <- getGenesets(org = "sce", db = "kegg", cache = TRUE, return.type="list")
-#
-##step5: Parse and write the gene sets to a flat text file in GMT format for other pathway enrichment analysis programs (e.g., GSEA):
-#writeGMT(sar, gmt.file = paste(base_dir, "Data/Other/enrichment_analysis/20250305_kegg_sce_gmt", sep=""))
-```
-
-### Process .gmt file to turn it into the list of gene set vectors we need for gsea()
-Get a list of pathways, with each entry being a vector with the Entrez IDs for the genes involved in that pathway. Make it so that only proteins that we detect in our dataset are included here. 
-```{r}
-# Read in the .gmt file
-gmt <- read.gmt(paste(base_dir, "tRNA_KOs/Data/enrichment_analysis/20250305_kegg_sce_gmt", sep=""))
-gmt$term <- as.character(gmt$term)
-
-# Get a simple vector with the Entrez IDs of the proteins we detect
-trna_ko <- as.data.frame(as.matrix(fread(paste(base_dir, "tRNA_KOs/Data/proteomics_data/processed_proteomics_dataframe.tsv", sep="")), rownames = 1))
-yeastmine <- as.data.frame(fread(paste(base_dir, "tRNA_KOs/Data/databases/alliancemine_results_2024-11-20T11-19-04.tsv", sep="")))
-proteins_detected <- match_systematic_and_standard_protein_names(data = rownames(trna_ko),
-                                                                 yeastmine = yeastmine,
-                                                                 input = "standard",
-                                                                 simplify = T)
-proteins_detected <- entrez_db$`NCBI_gene_(formerly_Entrezgene)_ID`[entrez_db$Protein_stable_ID %in% proteins_detected]
-
-# Get our list of vectors, where each vector is a KEGG pathway and the terms in it are the genes related to it - keeping only genes which are detected in our dataset
-gmt <- gmt %>%
-  mutate(pathway_code = substr(term, 1, str_locate(term, "_")[1]-1), 
-         pathway_name = substr(term, str_locate(term, "_")[1]+1, nchar(term)))
-
-kegg_genes <- list()
-pathways <- unique(gmt$pathway_name)
-for (i in 1:length(pathways)) {
-  pathway <- pathways[i]
-  temp <- gmt %>%
-    filter(pathway_name == pathway)
-  kegg_genes[[pathway]] <- as.character(temp$gene)[as.character(temp$gene) %in% proteins_detected]
-}
-```
-
-### Run GSEA
-The warning I get here refers to many proteins having exactly the same rank (these are the ones we see in a horizontal line in the plots produced in 5.1.) - this should be okay, since these are the genes that were not significantly differentially expressed at all - but tbh this makes it so that I cannot really get that much info from those anyway, right? So there isn't that much of a difference between this and doing the GSEA only with DE proteins, right?? Idk
-```{r}
-kegg_gsea_results <- list()
-
-for (i in 1:length(ranked_genes)) {
-  kegg_gsea_results[[names(ranked_genes)[i]]] <- fgsea(pathways = kegg_genes,                                # List of gene sets to check
-                                                       stats = ranked_genes[[i]],
-                                                       scoreType = 'std',                                     
-                                                                      # in this case we have both pos and neg rankings. if only pos or neg, set to 'pos', 'neg'
-                                                       minSize = 1,
-                                                       maxSize = 1000,
-                                                       nproc = 1)                                             # for parallelisation
-}
-
-
-# This returns a list, where each element is a dataframe for the corresponding KO strain, and each row in that dataframe is a pathway. However, all pathways are included, so we are going to filter all of these dataframes to keep only the pathways that are significant in each KO strain
-kegg_gsea_results_filtered <- lapply(kegg_gsea_results, function(x) filter(x, padj < alpha_enrichment))
-bool <- sapply(kegg_gsea_results_filtered, function(x) nrow(x)>0)
-kegg_gsea_results_filtered <- kegg_gsea_results_filtered[bool]
-
-# Save these results
-write_json(kegg_gsea_results_filtered, paste(base_dir, "tRNA_KOs/Data/enrichment_analysis/kegg_gsea_results_", alpha_plain, "_logFC_", as.character(lfc_threshold), "_enrichment_alpha_", alpha_enrichment_plain, ".json", sep=""), pretty = T)
-```
-
-
-## 3.3. GSEA with GO annotation
-### Get the information equivalent to that in the .gmt file and save it as gene set vectors already - code from ChatGPT
-Initially I was then saving this info to an actual .gmt file to them use it, but honestly that just made everything more convoluted, I'm just going to save it as a list of vectors, as a JSON file and that's it :)
-```{r}
-# Step 1: Connect to Ensembl Fungi
-ensembl_fungi <- useMart("fungi_mart", dataset = "scerevisiae_eg_gene", host = "https://fungi.ensembl.org")
-
-# Step 2: Retrieve GO annotations
-go_annotations <- getBM(attributes = c("ensembl_gene_id", "external_gene_name", 
-                                       "go_id", "name_1006", "namespace_1003", "entrezgene_id"),
-                        mart = ensembl_fungi)
-
-# This is added by me
-trna_ko <- as.data.frame(as.matrix(fread(paste(base_dir, "tRNA_KOs/Data/proteomics_data/processed_proteomics_dataframe.tsv", sep="")), rownames = 1))
-go_annotations <- go_annotations %>%
-  dplyr::filter(namespace_1003 != "go") %>%                                     # Pretty sure these rows are just wrong, or at least not useful to me
-  dplyr::filter(ensembl_gene_id %in% rownames(trna_ko)) %>%                     # Keep only those genes which are detected in our data, so as to prevent bias
-  dplyr::mutate(gene_set = case_when(namespace_1003 == "molecular_function" ~ paste(name_1006, " (MF)", sep=""),
-                              namespace_1003 == "biological_process" ~ paste(name_1006, " (BP)", sep=""),
-                              namespace_1003 == "cellular_component" ~ paste(name_1006, " (CC)", sep="")))
-
-# Check the first few rows
-head(go_annotations)
-
-# Step 3: Filter for Biological Process (BP) only - not interested in using this for now
-go_annotations <- go_annotations %>%
-  #filter(namespace_1003 == "biological_process") %>%
-  filter(go_id != "")  # Remove any empty GO terms if present
-
-# Step 4: Build a list: GO Term -> Genes
-# Use external_gene_name (common names) or ensembl_gene_id (your choice)
-go_list <- split(go_annotations$entrezgene_id, go_annotations$gene_set)
-
-# Step 5: Save this named list of vectors as a JSON file
-write_json(go_list, path = paste(base_dir, "tRNA_KOs/Data/enrichment_analysis/go_list_gmt.json", sep=""), pretty = T)
-```
-
-### Load the gene set vectors created in the previous chunk
-Get a list of pathways, with each entry being a vector with the Entrez IDs for the genes involved in that pathway. Make it so that only proteins that we detect in our dataset are included here. 
-```{r}
-# Read in the .json file
-go_gene_sets <- read_json(path = paste(base_dir, "tRNA_KOs/Data/enrichment_analysis/go_list_gmt.json", sep=""), simplifyVector = T)
-```
-
-### Run GSEA
-The warning I get here refers to many proteins having exactly the same rank (these are the ones we see in a horizontal line in the plots produced in 5.1.) - this should be okay, since these are the genes that were not significantly differentially expressed at all - but tbh this makes it so that I cannot really get that much info from those anyway, right? So there isn't that much of a difference between this and doing the GSEA only with DE proteins, right?? Idk
-```{r}
-go_gsea_results <- list()
-
-for (i in 1:length(ranked_genes)) {
-  go_gsea_results[[names(ranked_genes)[i]]] <- fgsea(pathways = go_gene_sets,                                # List of gene sets to check
-                                                       stats = ranked_genes[[i]],
-                                                       scoreType = 'std',                                     
-                                                                      # in this case we have both pos and neg rankings. if only pos or neg, set to 'pos', 'neg'
-                                                       minSize = 1,
-                                                       maxSize = 1000,
-                                                       nproc = 1)                                             # for parallelisation
-}
-
-
-# This returns a list, where each element is a dataframe for the corresponding KO strain, and each row in that dataframe is a pathway. However, all pathways are included, so we are going to filter all of these dataframes to keep only the pathways that are significant in each KO strain
-go_gsea_results_filtered <- lapply(go_gsea_results, function(x) filter(x, padj < alpha_enrichment))
-bool <- sapply(go_gsea_results_filtered, function(x) nrow(x)>0)
-go_gsea_results_filtered <- go_gsea_results_filtered[bool]
-
-# Save these results
-write_json(go_gsea_results_filtered, paste(base_dir, "tRNA_KOs/Data/enrichment_analysis/go_gsea_results_", alpha_plain, "_logFC_", as.character(lfc_threshold), "_enrichment_alpha_", alpha_enrichment_plain, ".json", sep=""), pretty = T)
-```
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-Debug
-```{r}
-raw_data = protein_mat$y.protein
-metadata = metadata
-method = "limma"
-strain_name_column = "Strain.Name"
-sample_name_column = "Sample.Name"
-reference_strain = "C0L"
-lfc_threshold = 1
-alpha = 0.05
-N = 10
-```
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
