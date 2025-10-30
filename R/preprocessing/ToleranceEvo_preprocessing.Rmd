@@ -67,6 +67,8 @@ Load data - local
 # Raw precursor-level report
 report_raw <- as.data.frame(fread("/home/alvaro/MyStuff/ToleranceEvo_Wenxi/Data/Raw/report.tsv"))
 report_raw_head <- report_raw[1:500,]
+print(glue("Number of unique precursors in raw report: {length(unique(report_raw$Precursor.Id))}"))
+nrow(report_raw)
 
 # Stats file
 stats_file <- as.data.frame(fread("/home/alvaro/MyStuff/ToleranceEvo_Wenxi/Data/Raw/report.stats.tsv"))
@@ -194,6 +196,8 @@ get_new_row_for_log <- function(step_number,
 # Run filtering
 data_filtered_proteotypic <- filter_proteotypic(report_raw_matched)
 
+print(glue("Number of unique precursors after proteotypicity filter: {length(unique(data_filtered_proteotypic$Precursor.Id))}"))
+
 # Save filtered dataset
 #fwrite(data_filtered_proteotypic, "data/filtered/data_filtered_proteoypic.tsv")
 ```
@@ -219,6 +223,8 @@ changes_log <- changes_log %>%
 ```{r}
 # Run filtering
 data_filtered_quantified <- filter_quantified(data_filtered_proteotypic)
+
+print(glue("Number of unique precursors after removing non-quantified precursors: {length(unique(data_filtered_quantified$Precursor.Id))}"))
 
 # Save filtered dataset
 #fwrite(data_filtered_proteotypic, "data/filtered/data_filtered_proteoypic.tsv")
@@ -252,6 +258,8 @@ data_filtered_Q <- filter_q_values(data = data_filtered_quantified,
                                    threshold = Q_values_threshold,
                                    q_values_to_filter = q_values_to_filter)
 
+print(glue("Number of unique precursors after Q-value filtering: {length(unique(data_filtered_Q$Precursor.Id))}"))
+
 # Saved filtered file
 #fwrite(data_filtered_Q, "data/filtered/data_filtered_Q.tsv")
 ```
@@ -272,6 +280,10 @@ changes_log <- changes_log %>%
 
 # 4. Some general data quality checks at this point, after filtering but before all the rest of the pre-processing
 ## 4.0. Get completeness vs. mean intensity plot, coloring by injection order
+Huh, I initially made this per sample (the completeness of that sample vs. the mean intensity across that sample), but now realized that the way that Luise made it is per precursor! I don't think there's such a thing as "wrong" or "right" here, they just represent different things, but the second one might definitely be more useful! 
+So I leave the old code for the first one here, it also contains some other plots that are indeed useful. 
+
+I am thinking that completeness in each sample simply tells us what were the samples that had the most or the least precursors identified, no? Don't know if that makes a lot of sense but okay. On the other hand, what about completeness per precursor? What does that one mean? It would allow us to distinguish super common (and easily detectable) precursors from rare ones (or harder to detect), no???
 ```{r}
 # Transform to wide format so I can count the NAs per sample
 data_filtered_Q_wide <- data_filtered_Q %>%
@@ -296,7 +308,7 @@ data_filtered_Q_test <- left_join(data_filtered_Q, na_count_df, by = "Sample.Nam
 
 # Plot completeness vs. mean intensity - colored by injection order
 ggplot(data = data_filtered_Q_test, aes(x = mean_Intensity, y = Completeness, col = Injection)) +
-  geom_point() +
+  geom_point(size = 2) +
   theme_light() +
   scale_color_viridis_c() +
   xlab("mean Intensity")
@@ -306,24 +318,125 @@ metadata_na_count <- left_join(metadata, na_count_df, by = "Sample.Name")
 ggplot(data = metadata_na_count, aes(x = Injection, y = NA_count)) +
   geom_point() +
   theme_light()
+
+# Boxplot for mean Intensity per condition -  first per condition, then coloring per each of the 3 variables
+ggplot(data = data_filtered_Q_test, aes(x = Strain.Name, y = mean_Intensity, fill = Strain.Name)) +
+  geom_boxplot() +
+  scale_fill_viridis_d() +
+  theme_light() +
+  labs(x = NULL,
+       y = "Mean intensity per sample",
+       title = "Mean intensity per sample, for all conditions") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1),
+        legend.position = "none")
+
+ggplot(data = data_filtered_Q_test, aes(x = Strain.Name, y = mean_Intensity, fill = Passage)) +
+  geom_boxplot() +
+  scale_fill_viridis_d() +
+  theme_light() +
+  labs(x = NULL,
+       y = "Mean intensity per sample",
+       title = "Mean intensity per sample, for all conditions") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
+
+ggplot(data = data_filtered_Q_test, aes(x = Strain.Name, y = mean_Intensity, fill = Treatment)) +
+  geom_boxplot() +
+  scale_fill_viridis_d() +
+  theme_light() +
+  labs(x = NULL,
+       y = "Mean intensity per sample",
+       title = "Mean intensity per sample, for all conditions") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
+
+ggplot(data = data_filtered_Q_test, aes(x = Strain.Name, y = mean_Intensity, fill = Strain.Type)) +
+  geom_boxplot() +
+  scale_fill_viridis_d() +
+  theme_light() +
+  labs(x = NULL,
+       y = "Mean intensity per sample",
+       title = "Mean intensity per sample, for all conditions") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
+
+# Boxplot for missingness per strain - first per condition, then coloring per each of the 3 variables
+ggplot(data = metadata_na_count, aes(x = Strain.Name, y = Completeness, fill = Strain.Name)) +
+  geom_boxplot() +
+  theme_light() +
+  scale_fill_viridis_d() +
+  labs(x = NULL,
+       y = "Completeness",
+       title = "Completeness per condition") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1),
+        legend.position = "none")
+
+ggplot(data = metadata_na_count, aes(x = Strain.Name, y = Completeness, fill = Passage)) +
+  geom_boxplot() +
+  theme_light() +
+  scale_fill_viridis_d() +
+  labs(x = NULL,
+       y = "Completeness",
+       title = "Completeness per condition") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
+
+ggplot(data = metadata_na_count, aes(x = Strain.Name, y = Completeness, fill = Treatment)) +
+  geom_boxplot() +
+  theme_light() +
+  scale_fill_viridis_d() +
+  labs(x = NULL,
+       y = "Completeness",
+       title = "Completeness per condition") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
+
+ggplot(data = metadata_na_count, aes(x = Strain.Name, y = Completeness, fill = Strain.Type)) +
+  geom_boxplot() +
+  theme_light() +
+  scale_fill_viridis_d() +
+  labs(x = NULL,
+       y = "Completeness",
+       title = "Completeness per condition") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
 ```
+
+Actually figure out completeness per precursor
+```{r}
+# Grab NAs per precursor and bring that information to the long-format DIA-NN report
+na_count <- apply(data_filtered_Q_wide, 1, function(x) sum(is.na(x)))
+na_count_df <- data.frame(rownames(data_filtered_Q_wide), na_count) 
+colnames(na_count_df) <- c("Precursor.Id", "NA_count")
+na_count_df <- na_count_df %>%
+  dplyr::mutate(Completeness = 1 - (NA_count/ncol(data_filtered_Q_wide)))
+
+# Get the mean intensity column (just mean of Precursor.Normalised after grouping by Precursor.Id)
+data_filtered_Q_test <- left_join(data_filtered_Q, na_count_df, by = "Precursor.Id") %>%
+  group_by(Precursor.Id) %>%
+  dplyr::mutate(mean_Intensity = log2(mean(Precursor.Normalised))) %>%
+  ungroup()
+
+ggplot(data = data_filtered_Q_test, aes(x = mean_Intensity, y = Completeness, col = Injection)) +
+  geom_point(size = 0.3) +
+  theme_light() +
+  scale_color_viridis_c()
+```
+
 
 
 ## 4.1. Also plots trying to explain missingness/completeness by grouping variables
 ```{r}
 # By Strain.Type
-ggplot(data = metadata_na_count, aes(x = Strain.Type, y = Completeness)) +
+ggplot(data = metadata_na_count, aes(x = Strain.Type, y = Completeness, fill = Strain.Type)) +
   geom_boxplot() +
-  theme_light()
+  theme_light() +
+  scale_fill_viridis_d()
 
 # By Passage
-ggplot(data = metadata_na_count, aes(x = Passage, y = Completeness)) +
+ggplot(data = metadata_na_count, aes(x = Passage, y = Completeness, fill = Passage)) +
   geom_boxplot() +
+  scale_fill_viridis_d() +
   theme_light()
 
 # By Treatment
-ggplot(data = metadata_na_count, aes(x = Treatment, y = Completeness)) +
+ggplot(data = metadata_na_count, aes(x = Treatment, y = Completeness, fill = Treatment)) +
   geom_boxplot() +
+  scale_fill_viridis_d() +
   theme_light()
 ```
 
@@ -416,10 +529,21 @@ CV_data %>%
        y = "CV",
        title = "CV across passages")
 
-# CV per treatment+strain type+passage
+# CV per treatment+strain type+passage - violin
 CV_data %>%
   ggplot(aes(x = Strain.Name, y = CV_strain, group = Strain.Name, fill = Strain.Name)) +
     geom_violin(draw_quantiles = c(0.5)) +
+    scale_fill_viridis_d() +
+    theme_light() +
+  labs(x = NULL,
+       y = "CV",
+       title = "CV across all conditions") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
+
+# CV per treatment+strain type+passage - boxplot
+CV_data %>%
+  ggplot(aes(x = Strain.Name, y = CV_strain, group = Strain.Name, fill = Strain.Name)) +
+    geom_boxplot(draw_quantiles = c(0.5)) +
     scale_fill_viridis_d() +
     theme_light() +
   labs(x = NULL,
@@ -441,29 +565,88 @@ median(CV_data_long$CV[CV_data_long$Group == "QC"], na.rm = T)
 ```
 
 
-## 4.2. Get PCAs at precursor level at this point
+## 4.2. Get PCAs at precursor level at this point - on complete cases only! 
+This is, we use only the precursors which are present in every sample. Get complete cases and check how many precursors we end up with
 ```{r}
+data_filtered_Q_wide_complete <- na.omit(data_filtered_Q_wide)
 
+print(glue("Original number of precursors: {nrow(data_filtered_Q_wide)}"))
+print(glue("Number of complete precursors across all samples: {nrow(data_filtered_Q_wide_complete)}"))
+print(glue("Percentage of complete precursors across all samples: {nrow(data_filtered_Q_wide_complete)/nrow(data_filtered_Q_wide)}"))
+
+# Save this one to test the modifications I'm making to the PCA function 
+saveRDS(data_filtered_Q_wide_complete, "/home/alvaro/MyStuff/data_filtered_Q_wide_complete.rds")
+```
+
+Actually do the PCA
+```{r}
+# By Strain.Type
+do_pca(data_filtered_Q_wide_complete,
+       metadata,
+       metadata_column_for_annotation = "Strain.Type",
+       metadata_column_for_sample_name = "Sample.Name",
+       location_to_save = "/home/alvaro/MyStuff/ToleranceEvo_Wenxi/Output/Plots/filtering/pca/",
+       save_as = "png")
+
+# By Passage
+do_pca(data_filtered_Q_wide_complete,
+       metadata,
+       metadata_column_for_annotation = "Passage",
+       metadata_column_for_sample_name = "Sample.Name",
+       location_to_save = "/home/alvaro/MyStuff/ToleranceEvo_Wenxi/Output/Plots/filtering/pca/",
+       save_as = "png")
+
+# By Treatment
+do_pca(data_filtered_Q_wide_complete,
+       metadata,
+       metadata_column_for_annotation = "Treatment",
+       metadata_column_for_sample_name = "Sample.Name",
+       location_to_save = "/home/alvaro/MyStuff/ToleranceEvo_Wenxi/Output/Plots/filtering/pca/",
+       save_as = "png")
+
+# By injection order
+do_pca(data_filtered_Q_wide_complete,
+       metadata,
+       metadata_column_for_annotation = "Injection",
+       metadata_column_for_sample_name = "Sample.Name",
+       location_to_save = "/home/alvaro/MyStuff/ToleranceEvo_Wenxi/Output/Plots/filtering/pca/",
+       save_as = "png")
+```
+
+Remove the outlying sample based on the PCA
+```{r}
+data_filtered_Q_no_outlier <- data_filtered_Q %>%
+  dplyr::filter(Sample.Name != "I7F_2")
 ```
 
 
 
 
+# 5. Filter based on z-score of TIC and number of precursors identified
+## 5.0. Have a look at the stats file myself
+```{r}
+ggplot(data = stats_file, aes(x = Precursors.Identified)) +
+  geom_histogram(col = "black", fill = "grey") +
+  theme_light()
 
-# 4. Filter based on z-score of TIC and number of precursors identified
-## 4.1. TIC
+ggplot(data = stats_file, aes(x = MS1.Signal)) +
+  geom_histogram(col = "black", fill = "grey") +
+  theme_light()
+```
+
+## 5.1. TIC
 ```{r}
 # Run filtering
-data_filtered_TIC <- filter_z_score_tic(data_filtered_Q, 
+data_filtered_TIC <- filter_z_score_tic(data_filtered_Q_no_outlier, 
                                         stats_file,
                                         label_outliers = T)
 ggsave("/data/cephfs-1/home/users/algo12_c/work/ToleranceEvo_Wenxi/Output/Plots/filtering/z_score_TIC.png")
 
 # Save filtered dataset
-#fwrite(data_filtered_TIC, "data/filtered/data_filtered_TIC.tsv")
+#fwrite(data_filtered_TIC, "data/filtered/data_filtered_TIC.tsv")S
 ```
 
-## 4.2. Number of identified precursors
+## 5.2. Number of identified precursors
 ```{r}
 # Run filtering
 data_filtered_number_of_id_precursors <- filter_z_score_number_of_identified_precursors(data_filtered_TIC, 
@@ -475,7 +658,7 @@ ggsave("/data/cephfs-1/home/users/algo12_c/work/ToleranceEvo_Wenxi/Output/Plots/
 #fwrite(data_filtered_TIC, "data/filtered/data_filtered_TIC.tsv")
 ```
 
-## 4.3. Update change log
+## 5.3. Update change log
 ```{r}
 new_row <- get_new_row_for_log(4, 
                                "Filtered all samples with robust z-score for TIC or number of identified peptides more than 2*SD away from the mean z-score",
@@ -491,8 +674,8 @@ changes_log <- changes_log %>%
 
 
 
-# 5. Filter based on detection threshold/sample fraction
-## 5.1. Perform filtering based on number of samples present per strain
+# 6. Filter based on detection threshold/sample fraction
+## 6.1. Perform filtering based on number of samples present per strain
 ```{r}
 # Remove already unnecessary version of the report (2 steps ago)
 rm(data_filtered_quantified)
@@ -521,8 +704,36 @@ changes_log <- changes_log %>%
 data_filtered_prec_per_strain <- remove_uncommon_precursors_per_strain(data_filtered_replicate_num, 
                                                                        percentage_of_samples_per_precursor)
 
+
+# Going to try Luise's approach - remove precursors which are measured in <50% of the samples, unless they are expressed in >65% of the samples in one condition
+# Set up the filter
+filterSF <- data_filtered_replicate_num %>%
+  dplyr::group_by(Precursor.Id, Strain.Name) %>%
+  dplyr::summarise(count_strain = n()) %>%
+  dplyr::ungroup() %>%
+  dplyr::group_by(Strain.Name) %>%
+  dplyr::mutate(maxCount_strain=max(count_strain)) %>%
+  dplyr::ungroup()
+data_filtered_replicate_num <- left_join(data_filtered_replicate_num, filterSF)
+
+filterSF <- data_filtered_replicate_num  %>%
+  dplyr::group_by(Precursor.Id) %>%
+  dplyr::summarise(count_total = n())
+data_filtered_replicate_num <- left_join(data_filtered_replicate_num, filterSF)
+
+# Apply filter
+data_filtered_prec_per_strain_2 <- data_filtered_replicate_num %>%
+  dplyr::filter(count_strain >= percentage_of_samples_per_precursor*maxCount_strain | count_total > 0.5*length(unique(data_filtered_replicate_num$File.Name))) #%>%
+  #dplyr::select(-c(count_strain, count_total))
+
 # Save filtered dataset
 #fwrite(data_filtered_prec_per_strain, "data/filtered/data_filtered_prec_per_strain.tsv")
+
+
+# Compare results - lmao they are exactly the same, I guess I don't have enough samples for this to make sense
+print(glue("Number of unique precursor IDs before filtering: {length(unique(data_filtered_replicate_num$Precursor.Id))}"))
+print(glue("Number of unique precursor IDs after filtering old: {length(unique(data_filtered_prec_per_strain$Precursor.Id))}"))
+print(glue("Number of unique precursor IDs after filtering new: {length(unique(data_filtered_prec_per_strain_2$Precursor.Id))}"))
 ```
 
 
