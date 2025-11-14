@@ -1359,11 +1359,9 @@ ggplot(df_plot, aes(x = FoG20, y = Expression, color = Treatment)) +
 
 
 
-
-
 --> Going to do a GSEA for the up- and down- regulated proteins in tolerance, since in resistance we can't really see much
 
-# 3. GSEA
+# 4. GSEA
 Load data
 ```{r}
 # Full Entrez ID dataframe, with all genes
@@ -1371,7 +1369,7 @@ entrez_db <- as.data.frame(fread(paste(base_dir, "ToleranceEvo_Wenxi/Data/enrich
 ```
 
 
-## 3.1. Prepare ranked gene lists
+## 4.1. Prepare ranked gene lists
 For now, my score/rank is: sign(logFC)*(-log10(adj.P.Val))
 ```{r}
 # Get the corresponding KEGG IDs to these UniProt gene names, since the GSEA is performed in terms of those
@@ -1415,7 +1413,7 @@ length(rankings)
 #write_json(ranked_genes, path = paste(base_dir, "ToleranceEvo_Wenxi/Data/enrichment_analysis/lists_of_ranked_genes_", alpha_plain, "_logFC_", as.character(lfc_threshold), sep=""), pretty = T)
 ```
 
-## 3.2. Perform GSEA with KEGG annotation - as described by https://biostatsquid.com/fgsea-tutorial-gsea/
+## 4.2. Perform GSEA with KEGG annotation - as described by https://biostatsquid.com/fgsea-tutorial-gsea/
 ### Download KEGG gene lists (according to https://www.researchgate.net/post/How_i_can_get_a_list_of_KEGG_pathways_and_its_list_of_genes)
 DO NOT RUN AGAIN - I used this to download the .gmt file, I just need to load it, but I left this code here in case I want to know how I did it
 ```{r}
@@ -1518,9 +1516,197 @@ ggplot(top_pathways, aes(x = fct_reorder(pathway, NES), y = NES, fill = directio
 
 
 
+# 5. Repeating DEA and GSEA separately for each treatment group, as suggested during the microbiology meeting
+## 5.1. Differential abundance analysis for resistance and tolerance, separately for each treatment group - THE GSEA FOR THE DATA PRODUCED HERE IS IN SECTION 
+Originally, I was doing this for the whole dataset together, but as suggested during the microbiology meeting on 20.10.2025, I now separate the dataset per treatment (since this is the variable that has the most effect on the proteomes) and then do differential expression separately for each of these sub-datasets. 
+### 5.1.1. Differential abundance analysis
+```{r}
+# First of all, need to remove the QC samples from the protein abundance dataset - not sure if this is necessary anymore?
+raw_data <- protein_mat[, !grepl("QC", colnames(protein_mat))]
+
+# Since we are going to start an iteration before, we first create an empty list where we can save the output of each of the iterations
+list_for_de_results <- list()
 
 
 
+# Iterate over the 3 treatments
+treatments <- unique(metadata$Treatment)[!unique(metadata$Treatment) %in% c("QC")]          # grab the treatment names to iterate over them
 
+for (i in 1:length(treatments)) {                                                           # iterate over treatment groups
+  treatment <- treatments[i]
+  samples_to_select <- metadata$Sample.Name[metadata$Treatment == treatment]              # grab the names of the samples in this treatment group
+  protein_data_treatment <- protein_mat[, colnames(protein_mat) %in% samples_to_select]   # remove all samples from the protein dataset that don't belong to this treatment group
+  
+  # Make sure the order of the columns in the protein abundance dataset matches the order of the rows in the metadata
+  metadata_sorted <- metadata[match(colnames(protein_data_treatment), metadata$Sample.Name), ] 
+  
+  
+  # FOR RESISTANCE
+  # Create a design matrix - this is the matrix that tells the DE algorithm which samples belong to the same group
+  design <- model.matrix(~ Resistance + Strain.Type, data = metadata_sorted)
+  
+  # Fit model
+  fit <- lmFit(protein_data_treatment, design)
+  fit <- eBayes(fit)
+  
+  # Extract results for the 'Resistance' coefficient of the fitted model
+  resistance_results <- topTable(fit, coef = "Resistance", number = Inf, adjust.method = "BH")
+  
+  # The protein IDs are in the rownames now, let's put them in a column instead
+  resistance_results <- tibble::rownames_to_column(resistance_results, var = "protein")
+  
+  # Now we save this dataframe with the results of the DE analysis to the empty list we created above, while specifying the name of the parameter used and the treatment
+  list_for_de_results[[paste(treatment, "_resistance", sep="")]] <- resistance_results
+  
+  
+  # FOR TOLERANCE
+  # Create a design matrix - this is the matrix that tells the DE algorithm which samples belong to the same group
+  design <- model.matrix(~ FoG20 + Strain.Type, data = metadata_sorted)
+  
+  # Fit model
+  fit <- lmFit(protein_data_treatment, design)
+  fit <- eBayes(fit)
+  
+  # Extract results for the 'Resistance' coefficient of the fitted model
+  tolerance_results <- topTable(fit, coef = "FoG20", number = Inf, adjust.method = "BH")
+  
+  # The protein IDs are in the rownames now, let's put them in a column instead
+  tolerance_results <- tibble::rownames_to_column(tolerance_results, var = "protein")
+  
+  # Now we save this dataframe with the results of the DE analysis to the empty list we created above, while specifying the name of the parameter used and the treatment
+  list_for_de_results[[paste(treatment, "_tolerance", sep="")]] <- tolerance_results
+}
+```
+
+### 5.1.2. Create a volcano plot for each of the 6 results from differential analysis
+```{r}
+# We iterate over the dataframes in the list, each of them contains the reults from DEA for one of the treatments for tolerance or resistance, and we create the same plot for all of them
+for (i in 1:length(list_for_de_results)) {
+  df <- list_for_de_results[[i]]
+  name <- names(list_for_de_results)[i]
+  
+  p <- ggplot(data = df, aes(x = logFC, y = -log10(adj.P.Val))) +
+              geom_point() +
+              theme_light() +
+              geom_hline(yintercept = -log10(0.05), col = "orange", linewidth = 1) +      # this adds the horizontal line at p-value = 0.05
+              labs(title = glue("Differentially abundant proteins for {name}")) +          # this creates the plot title
+              geom_vline(xintercept = mean(df$logFC)+2*sd(df$logFC), col = "orange", linewidth = 1) + # this line and the following create the vertical lines, for a logFC threshold
+              geom_vline(xintercept = mean(df$logFC)-2*sd(df$logFC), col = "orange", linewidth = 1)   # since this threshold would be different across these plots, I set it at the +-2*SD of the logFC distribution   
+  print(p)
+}
+```
+
+
+
+## 5.2. GSEA
+Load and prepare data
+```{r}
+# Full Entrez ID dataframe, with all genes
+entrez_db <- as.data.frame(fread("/home/alvaro/MyStuff/Projects/ToleranceEvo_Wenxi/Data/enrichment_analysis/databases/uniprotkb_proteome_UP000000559_2025_10_19.tsv"))
+
+# Get the corresponding KEGG IDs to the UniProt gene names, since the GSEA is performed in terms of the KEGG IDs
+temp_entrez <- entrez_db %>%
+  dplyr::select(Entry, GeneID) %>%
+  dplyr::rename(uniprot = Entry) %>%
+  dplyr::mutate(GeneID = substr(GeneID, 1, nchar(GeneID)-1))
+
+# Process .gmt file to turn it into the list of gene set vectors we need for gsea()
+gmt <- read.gmt("/home/alvaro/MyStuff/Projects/ToleranceEvo_Wenxi/Data/enrichment_analysis/databases/20251019_kegg_cal.gmt")
+gmt$term <- as.character(gmt$term)
+
+# Get a simple vector with the Entrez IDs of the proteins we detect
+proteins_detected <- temp_entrez$GeneID
+
+# Get our list of vectors, where each vector is a KEGG pathway and the terms in it are the genes related to it - keeping only genes which are detected in our dataset
+kegg_genes <- list()
+pathways <- names(gmt)
+
+kegg_genes <- lapply(names(gmt), function(pathway) {
+  intersect(gmt[[pathway]], proteins_detected)
+})
+names(kegg_genes) <- names(gmt)
+```
+
+### 5.2.1. Prepare ranked gene lists
+For now, my score/rank is: sign(logFC)*(-log10(adj.P.Val))
+```{r}
+# Since we are going to start an iteration before, we first create an empty list where we can save the output of each of the iterations
+list_for_gsea_results <- list()
+
+
+# Iterate over the dataframes on the results list and do GSEA for all of them
+for (i in 1:length(list_for_de_results)) {
+  temp <- list_for_de_results[[i]]
+  name <- names(list_for_de_results)[i]
+  
+  # Rename the column with the protein names so that we can match with the UniProt dataset modified above
+  temp <- temp %>%
+    dplyr::rename(uniprot = protein) %>%
+    left_join(temp_entrez, by = "uniprot")
+  
+  # Using as score the [-log10(p-value)*sign of the logFC], calculate this for every row in the dataset - this is, for every protein
+  # This score contains the information from both the p-value and the logFC - there are many different ones that can be used, but this is a kind of standard one
+  rankings <- sign(temp$logFC)*(-log10(temp$adj.P.Val))
+  names(rankings) <- temp$GeneID
+  rankings <- sort(rankings, decreasing = TRUE)
+  
+  # Sometimes, some genes have such low p-values that the signed pval is +- inf, we need to change it to the maximum * constant to avoid problems with fgsea
+  max_ranking <- max(rankings[is.finite(rankings)])
+  min_ranking <- min(rankings[is.finite(rankings)])
+  rankings <- replace(rankings, rankings > max_ranking, max_ranking * 10)
+  rankings <- replace(rankings, rankings < min_ranking, min_ranking * 10)
+  rankings <- sort(rankings, decreasing = TRUE)                                   # sort genes by ranking
+  
+  # Get rid of rankings with emtpy names and with repeated names
+  length(rankings)
+  rankings <- rankings[!is.na(names(rankings)) & names(rankings) != ""]
+  rankings <- rankings[!duplicated(names(rankings))]
+  length(rankings)
+  
+  
+  # Run GSEA
+  fgseaRes <- fgsea(
+      pathways = kegg_genes,
+      stats = rankings,
+      minSize = 10,
+      maxSize = 500)
+  
+  # Save to the list
+  list_for_gsea_results[[name]] <- fgseaRes
+}
+```
+
+Barplots for GSEA results
+```{r}
+for (i in 1:length(list_for_gsea_results)) {
+  fgseaRes <- list_for_gsea_results[[i]]
+  name <- names(list_for_gsea_results)[i]
+  
+  # Create a new column which marks each patwhay as up- or down-regulated based on the sign of the NES (this is kind of the equivalent of the logFC in the DEA)
+  # Also modify the name of the pathway, remove the ugly stuff at the beginning and substitute "_" for " ". 
+  fgseaRes <- fgseaRes %>%
+    dplyr::mutate(direction = case_when(NES > 0 ~ "Up-regulated",
+                                        NES < 0 ~ "Down-regulated",
+                                        TRUE    ~ "Neutral")) %>%
+    dplyr::mutate(pathway = str_replace_all(str_remove(pathway, "^[^_]*_"), "_", " "))
+  
+  # Grab the top pathways, filtering based on their p-values - BE CAREFUL!: we are not filtering based on NES (kind of effect size), so need to keep an eye on that, it could be that we have significant p-values but the NES is so small that it is not biologically relevant
+  top_pathways <- fgseaRes %>%
+    dplyr::filter(padj < alpha_enrichment) %>%
+    arrange(padj)
+  
+  # Create the barplot
+  p <- ggplot(top_pathways, aes(x = fct_reorder(pathway, NES), y = NES, fill = direction)) +             #fct_reorder() orders the bars based on NES
+              geom_col() +
+              coord_flip() +                                                                                  # horizontal bars instead of vertical
+              scale_fill_manual(values = c("Up-regulated" = "firebrick", "Down-regulated" = "steelblue")) +
+              labs(x = "Pathway",
+                   y = "Normalized Enrichment Score (NES)",
+                   title = glue("Top enriched pathways for {name}")) +
+              theme_minimal(base_size = 11) +
+              theme(plot.title = element_text(size = 13))                                                     # set smaller title font here
+  print(p)
+}
+```
 
 

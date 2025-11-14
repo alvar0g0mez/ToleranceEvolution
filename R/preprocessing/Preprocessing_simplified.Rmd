@@ -1,14 +1,13 @@
 ---
-title: "ToleranceEvo_preprocessing"
+title: "Preprocessing_simplified"
 author: "Álvaro Gómez Pérez"
-date: "2025-07-14"
+date: "2025-11-04"
 output: html_document
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
-
 
 Packages
 ```{r}
@@ -31,44 +30,12 @@ library(impute)
 ```
 
 
-Load data - cluster
-```{r}
-## Raw precursor-level report
-#report_raw <- as.data.frame(fread("/home/alvaro/MyStuff/Projects/ToleranceEvo_Wenxi/Data/Raw/report.tsv"))
-#report_raw_head <- report_raw[1:500,]
-#
-## Stats file
-#stats_file <- as.data.frame(fread("/home/alvaro/MyStuff/Projects/ToleranceEvo_Wenxi/Data/Raw/report.stats.tsv"))
-#
-## Metadata
-#metadata <- as.data.frame(fread("/home/alvaro/MyStuff/Projects/ToleranceEvo_Wenxi/Data/metadata/metadata_processed.txt"))
-#metadata_temp <- metadata %>%
-#  dplyr::select(File.Name, Strain.Name, Analysis.Row, Analysis.Column, Sample.Name, Sample.Type, Strain.Type, Passage, Treatment)
-#
-## Add sample layout columns to report and keep only columns of interest
-#report_raw_matched <- report_raw %>%
-#  dplyr::select(File.Name, Protein.Group, Protein.Ids, Protein.Names, Genes, Modified.Sequence, Stripped.Sequence, Precursor.Id, Precursor.Quantity, Precursor.Normalised, Proteotypic, #Q.Value, PG.Q.Value, Global.Q.Value, Global.PG.Q.Value, Lib.Q.Value, RT) %>%
-#  left_join(metadata, by = "File.Name")
-#report_raw_matched_head <- report_raw_matched[1:500,]
-#
-## Add a couple columns of interest to the stats file as well
-#metadata_temp <- metadata %>%
-#  dplyr::select(File.Name, Strain.Name, Sample.Name, Strain.Type, Passage, Treatment)
-#stats_file <- left_join(stats_file, metadata_temp, by = "File.Name")
-#rm(metadata_temp)
-#
-## Unique genes
-#unique_genes <- as.data.frame(fread("/home/alvaro/MyStuff/Projects/ToleranceEvo_Wenxi/Data/Raw/report.unique_genes_matrix.tsv"))
-```
-
-
-Load data - local
+Load data
 ```{r}
 # Raw precursor-level report
 report_raw <- as.data.frame(fread("/home/alvaro/MyStuff/Projects/ToleranceEvo_Wenxi/Data/Raw/report.tsv"))
 report_raw_head <- report_raw[1:500,]
 print(glue("Number of unique precursors in raw report: {length(unique(report_raw$Precursor.Id))}"))
-nrow(report_raw)
 
 # Stats file
 stats_file <- as.data.frame(fread("/home/alvaro/MyStuff/Projects/ToleranceEvo_Wenxi/Data/Raw/report.stats.tsv"))
@@ -93,8 +60,6 @@ rm(metadata_temp)
 # Unique genes
 unique_genes <- as.data.frame(fread("/home/alvaro/MyStuff/Projects/ToleranceEvo_Wenxi/Data/Raw/report.unique_genes_matrix.tsv"))
 ```
-
-
 
 
 # 0. Set up
@@ -197,9 +162,6 @@ get_new_row_for_log <- function(step_number,
 data_filtered_proteotypic <- filter_proteotypic(report_raw_matched)
 
 print(glue("Number of unique precursors after proteotypicity filter: {length(unique(data_filtered_proteotypic$Precursor.Id))}"))
-
-# Save filtered dataset
-#fwrite(data_filtered_proteotypic, "data/filtered/data_filtered_proteoypic.tsv")
 ```
 
 
@@ -225,9 +187,6 @@ changes_log <- changes_log %>%
 data_filtered_quantified <- filter_quantified(data_filtered_proteotypic)
 
 print(glue("Number of unique precursors after removing non-quantified precursors: {length(unique(data_filtered_quantified$Precursor.Id))}"))
-
-# Save filtered dataset
-#fwrite(data_filtered_proteotypic, "data/filtered/data_filtered_proteoypic.tsv")
 ```
 
 
@@ -245,7 +204,6 @@ changes_log <- changes_log %>%
 
 
 
-
 # 3. Filter based on Q-values
 ## 3.1. Perform filtering
 ```{r}
@@ -259,9 +217,6 @@ data_filtered_Q <- filter_q_values(data = data_filtered_quantified,
                                    q_values_to_filter = q_values_to_filter)
 
 print(glue("Number of unique precursors after Q-value filtering: {length(unique(data_filtered_Q$Precursor.Id))}"))
-
-# Saved filtered file
-#fwrite(data_filtered_Q, "data/filtered/data_filtered_Q.tsv")
 ```
 
 
@@ -278,12 +233,11 @@ changes_log <- changes_log %>%
 ```
 
 
+
+
 # 4. Some general data quality checks at this point, after filtering but before all the rest of the pre-processing
 ## 4.0. Get completeness vs. mean intensity plot, coloring by injection order
-Huh, I initially made this per sample (the completeness of that sample vs. the mean intensity across that sample), but now realized that the way that Luise made it is per precursor! I don't think there's such a thing as "wrong" or "right" here, they just represent different things, but the second one might definitely be more useful! 
-So I leave the old code for the first one here, it also contains some other plots that are indeed useful. 
-
-I am thinking that completeness in each sample simply tells us what were the samples that had the most or the least precursors identified, no? Don't know if that makes a lot of sense but okay. On the other hand, what about completeness per precursor? What does that one mean? It would allow us to distinguish super common (and easily detectable) precursors from rare ones (or harder to detect), no???
+Here I do this per sample, I think it might make more sense looking at it per precursor, so I do that further below
 ```{r}
 # Transform to wide format so I can count the NAs per sample
 data_filtered_Q_wide <- data_filtered_Q %>%
@@ -293,12 +247,13 @@ data_filtered_Q_wide <- data_filtered_Q %>%
   as.data.frame() %>%
   set_column_as_rownames(column_name = "Precursor.Id")
 
-# Bring this information of NAs per sample (as well as this as a ratio over the identified precursors) as new columns to the dataset
+# Bring this information of NAs per sample (as well as this as a ratio over the identified precursors) as new columns to the dataset and to the metadata 
 na_count <- apply(data_filtered_Q_wide, 2, function(x) sum(is.na(x)))
 na_count_df <- data.frame(colnames(data_filtered_Q_wide), na_count) 
 colnames(na_count_df) <- c("Sample.Name", "NA_count")
 na_count_df <- na_count_df %>%
   dplyr::mutate(Completeness = 1 - (NA_count/nrow(data_filtered_Q_wide)))
+metadata_na_count <- left_join(metadata, na_count_df, by = "Sample.Name")
 
 # Get the mean intensity column (just mean of Precursor.Normalised after grouping by Sample.Name)
 data_filtered_Q_test <- left_join(data_filtered_Q, na_count_df, by = "Sample.Name") %>%
@@ -306,18 +261,12 @@ data_filtered_Q_test <- left_join(data_filtered_Q, na_count_df, by = "Sample.Nam
   dplyr::mutate(mean_Intensity = log2(mean(Precursor.Normalised))) %>%
   ungroup()
 
-# Plot completeness vs. mean intensity - colored by injection order
+# Plot completeness vs. mean intensity per sample - colored by injection order
 ggplot(data = data_filtered_Q_test, aes(x = mean_Intensity, y = Completeness, col = Injection)) +
   geom_point(size = 2) +
   theme_light() +
   scale_color_viridis_c() +
   xlab("mean Intensity")
-
-# How about completeness vs. injection order? - didn't realize this information was already in the coloring of the previous plot
-metadata_na_count <- left_join(metadata, na_count_df, by = "Sample.Name")
-ggplot(data = metadata_na_count, aes(x = Injection, y = NA_count)) +
-  geom_point() +
-  theme_light()
 
 # Boxplot for mean Intensity per condition -  first per condition, then coloring per each of the 3 variables
 ggplot(data = data_filtered_Q_test, aes(x = Strain.Name, y = mean_Intensity, fill = Strain.Name)) +
@@ -463,8 +412,6 @@ And create the following plots:
 
 Calculate CVs
 ```{r}
-start.time <- Sys.time()
-
 CV_data <- data_filtered_Q_test %>%
   dplyr::group_by(Strain.Name, Precursor.Id) %>%
   dplyr::mutate("CV_strain" = sd(Precursor.Normalised, na.rm = T)/mean(Precursor.Normalised, na.rm = T)) %>%
@@ -481,10 +428,6 @@ CV_data <- data_filtered_Q_test %>%
   dplyr::ungroup() %>%
   dplyr::mutate(QC_or_not = case_when(Strain.Name == "QC" ~ "QC",
                                       TRUE ~ "Biological replicates"))
-
-end.time <- Sys.time()
-time.taken <- end.time - start.time
-glue("Time taken to create CV data: {time.taken} seconds")
 
 
 # Turn CV data into long format in order to plot easily
@@ -503,7 +446,7 @@ CV_data_long_treatment <- CV_data %>%
   dplyr::select(CV_treatment, Treatment, Precursor.Id)
 ```
 
-Plot
+Create CV plots
 ```{r}
 # CV per treatment group
 CV_data %>%
@@ -549,7 +492,7 @@ CV_data %>%
 # CV per treatment+strain type+passage - boxplot
 CV_data %>%
   ggplot(aes(x = Strain.Name, y = CV_strain, group = Strain.Name, fill = Strain.Name)) +
-    geom_boxplot() +
+    geom_boxplot(draw_quantiles = c(0.5)) +
     scale_fill_viridis_d() +
     theme_light() +
   labs(x = NULL,
@@ -571,7 +514,7 @@ median(CV_data_long$CV[CV_data_long$Group == "QC"], na.rm = T)
 ```
 
 
-## 4.3. Get PCAs at precursor level at this point - on complete cases only! 
+## 4.3. Get PCAs at precursor level at this point - on complete precursors only! 
 This is, we use only the precursors which are present in every sample. Get complete cases and check how many precursors we end up with
 ```{r}
 data_filtered_Q_wide_complete <- na.omit(data_filtered_Q_wide)
@@ -579,9 +522,6 @@ data_filtered_Q_wide_complete <- na.omit(data_filtered_Q_wide)
 print(glue("Original number of precursors: {nrow(data_filtered_Q_wide)}"))
 print(glue("Number of complete precursors across all samples: {nrow(data_filtered_Q_wide_complete)}"))
 print(glue("Percentage of complete precursors across all samples: {nrow(data_filtered_Q_wide_complete)/nrow(data_filtered_Q_wide)}"))
-
-# Save this one to test the modifications I'm making to the PCA function 
-saveRDS(data_filtered_Q_wide_complete, "/home/alvaro/MyStuff/Projects/data_filtered_Q_wide_complete.rds")
 ```
 
 Actually do the PCA
@@ -591,6 +531,7 @@ do_pca(data_filtered_Q_wide_complete,
        metadata,
        metadata_column_for_annotation = "Strain.Type",
        metadata_column_for_sample_name = "Sample.Name",
+       threshold_for_no_imputation = 0.5,
        location_to_save = "/home/alvaro/MyStuff/Projects/ToleranceEvo_Wenxi/Output/Plots/filtering/pca/",
        save_as = "png")
 
@@ -599,6 +540,7 @@ do_pca(data_filtered_Q_wide_complete,
        metadata,
        metadata_column_for_annotation = "Passage",
        metadata_column_for_sample_name = "Sample.Name",
+       threshold_for_no_imputation = 0.5,
        location_to_save = "/home/alvaro/MyStuff/Projects/ToleranceEvo_Wenxi/Output/Plots/filtering/pca/",
        save_as = "png")
 
@@ -607,6 +549,7 @@ do_pca(data_filtered_Q_wide_complete,
        metadata,
        metadata_column_for_annotation = "Treatment",
        metadata_column_for_sample_name = "Sample.Name",
+       threshold_for_no_imputation = 0.5,
        location_to_save = "/home/alvaro/MyStuff/Projects/ToleranceEvo_Wenxi/Output/Plots/filtering/pca/",
        save_as = "png")
 
@@ -615,6 +558,7 @@ do_pca(data_filtered_Q_wide_complete,
        metadata,
        metadata_column_for_annotation = "Injection",
        metadata_column_for_sample_name = "Sample.Name",
+       threshold_for_no_imputation = 0.5,
        location_to_save = "/home/alvaro/MyStuff/Projects/ToleranceEvo_Wenxi/Output/Plots/filtering/pca/",
        save_as = "png")
 ```
@@ -680,7 +624,6 @@ data_filtered_Q_no_outlier <- data_filtered_Q %>%
 
 
 
-
 # 5. Filter based on z-score of TIC and number of precursors identified
 ## 5.0. Have a look at the stats file myself
 ```{r}
@@ -733,26 +676,6 @@ changes_log <- changes_log %>%
 
 
 # 6. Filter based on detection threshold/sample fraction
-## 6.0. Check missingness
-```{r}
-# Get wide version of the data
-data_wide <- data_filtered_TIC %>%
-  dplyr::select(Precursor.Id, Sample.Name, Precursor.Normalised) %>%
-  pivot_wider(names_from = Sample.Name,
-              values_from = Precursor.Normalised) %>%
-  as.data.frame()
-rownames(data_wide) <- data_wide$Precursor.Id
-data_wide <- data_wide %>%
-  dplyr::select(-Precursor.Id)
-
-missigness_per_sample <- apply(data_wide, 2, function(x) sum(is.na(x))/nrow(data_wide))
-missingness_per_precursor <- apply(data_wide, 1, function(x) sum(is.na(x))/ncol(data_wide))
-
-hist(missigness_per_sample)
-hist(missingness_per_precursor)
-```
-
-
 ## 6.1. Perform filtering based on number of samples present per strain
 ```{r}
 # Remove already unnecessary version of the report (2 steps ago)
@@ -781,37 +704,6 @@ changes_log <- changes_log %>%
 ```{r}
 data_filtered_prec_per_strain <- remove_uncommon_precursors_per_strain(data_filtered_replicate_num, 
                                                                        percentage_of_samples_per_precursor)
-
-
-# Going to try Luise's approach - remove precursors which are measured in <50% of the samples, unless they are expressed in >65% of the samples in one condition
-# Set up the filter
-filterSF <- data_filtered_replicate_num %>%
-  dplyr::group_by(Precursor.Id, Strain.Name) %>%
-  dplyr::summarise(count_strain = n()) %>%
-  dplyr::ungroup() %>%
-  dplyr::group_by(Strain.Name) %>%
-  dplyr::mutate(maxCount_strain=max(count_strain)) %>%
-  dplyr::ungroup()
-data_filtered_replicate_num <- left_join(data_filtered_replicate_num, filterSF)
-
-filterSF <- data_filtered_replicate_num  %>%
-  dplyr::group_by(Precursor.Id) %>%
-  dplyr::summarise(count_total = n())
-data_filtered_replicate_num <- left_join(data_filtered_replicate_num, filterSF)
-
-# Apply filter
-data_filtered_prec_per_strain_2 <- data_filtered_replicate_num %>%
-  dplyr::filter(count_strain >= percentage_of_samples_per_precursor*maxCount_strain | count_total > 0.5*length(unique(data_filtered_replicate_num$File.Name))) #%>%
-  #dplyr::select(-c(count_strain, count_total))
-
-# Save filtered dataset
-#fwrite(data_filtered_prec_per_strain, "data/filtered/data_filtered_prec_per_strain.tsv")
-
-
-# Compare results - lmao they are exactly the same, I guess I don't have enough samples for this to make sense
-print(glue("Number of unique precursor IDs before filtering: {length(unique(data_filtered_replicate_num$Precursor.Id))}"))
-print(glue("Number of unique precursor IDs after filtering old: {length(unique(data_filtered_prec_per_strain$Precursor.Id))}"))
-print(glue("Number of unique precursor IDs after filtering new: {length(unique(data_filtered_prec_per_strain_2$Precursor.Id))}"))
 ```
 
 
@@ -829,11 +721,9 @@ changes_log <- changes_log %>%
 
 
 
-
 # 7. Filter based on precursor CV
 ## 7.1. First of all I need to calculate the CV for each precursor across: QCs, biological replicates, and all samples, and plot their densities. 
 ```{r}
-# This still takes a bit to run, but I have no idea if there is a way to make it faster/more efficient?
 CV_data <- create_CV_data(data_filtered_prec_per_strain)
 ```
 
@@ -900,18 +790,8 @@ ggsave("/home/alvaro/MyStuff/Projects/ToleranceEvo_Wenxi/Output/Plots/QC/raw_rep
 
 ## 2.1. Get scatter plot for total intensity of all precursors identified per sample vs. injection order
 report <- sum_precursor_intensities_per_sample(report)
-#
-#ggplot(data = report, aes(x = Injection_order, y = Precursor_normalized_sum_per_sample, col = Sample.Type)) +
-#  geom_point() +
-#  theme_light() +
-#  xlab("Injection order") +
-#  ylab("Total Precursor.Normalised") +
-#  labs(title = "Sum of Precursor.Normalised per sample") +
-#  theme(axis.text.x=element_blank(),
-#        axis.ticks.x=element_blank())
-#
-#
-#
+
+
 # 1.2.1. Get boxplot for identified precursors per sample per strain - colored by Strain.Type
 ggplot(data = report, aes(x = Strain.Name, y = Precursors_per_sample, col = Strain.Type)) +
   geom_boxplot() +
@@ -948,80 +828,8 @@ report %>%
   theme(axis.text.x=element_blank(),
         axis.ticks.x=element_blank())
 ggsave("/home/alvaro/MyStuff/Projects/ToleranceEvo_Wenxi/Output/Plots/QC/raw_report/precursor_ids_per_sample_boxplot_per_treatment.png", dpi = 600)
-
-## 2.2.1. Get boxplot for total intensity of all precursors identified per sample per strain - colored by Strain.Type
-#ggplot(data = report, aes(x = Strain.Name, y = Precursor_normalized_sum_per_sample, col = Strain.Type)) +
-#  geom_boxplot() +
-#  theme_light() +
-#  xlab("Strain") +
-#  ylab("Total Precursor.Normalised") +
-#  labs(title = "Sum of Precursor.Normalised per sample") +
-#  theme(axis.text.x=element_blank(),
-#        axis.ticks.x=element_blank())
-#
-## 2.2.2. Get boxplot for total intensity of all precursors identified per sample per strain - colored by Passage
-#report %>%
-#  dplyr::mutate(Strain.Name = forcats::fct_relevel(Strain.Name, unique(Strain.Name[order(Passage)]))) %>%
-#  ggplot(aes(x = Strain.Name, y = Precursor_normalized_sum_per_sample, col = Passage)) +
-#  geom_boxplot() +
-#  theme_light() +
-#  xlab("Strain") +
-#  ylab("Total Precursor.Normalised") +
-#  labs(title = "Sum of Precursor.Normalised per sample") +
-#  theme(axis.text.x=element_blank(),
-#        axis.ticks.x=element_blank())
-#
-## 2.2.3. Get boxplot for total intensity of all precursors identified per sample per strain - colored by Treatment
-#report %>%
-#  dplyr::mutate(Strain.Name = forcats::fct_relevel(Strain.Name, unique(Strain.Name[order(Treatment)]))) %>%
-#  ggplot(aes(x = Strain.Name, y = Precursor_normalized_sum_per_sample, col = Treatment)) +
-#  geom_boxplot() +
-#  theme_light() +
-#  xlab("Strain") +
-#  ylab("Total Precursor.Normalised") +
-#  labs(title = "Sum of Precursor.Normalised per sample") +
-#  theme(axis.text.x=element_blank(),
-#        axis.ticks.x=element_blank())
-#
-#
-#
-## 3.1. Boxplot of Precursor.Normalised per sample - colored by Strain.Type
-#report %>%
-#  dplyr::mutate(File.Name = forcats::fct_relevel(File.Name, unique(File.Name[order(Strain.Type)]))) %>% 
-#  ggplot(aes(x = File.Name, y = log2(Precursor.Normalised), fill = Strain.Type)) +
-#  geom_boxplot() +
-#  theme_light() +
-#  xlab("Sample") +
-#  ylab("Precursor.Normalised") +
-#  labs(title = "Precursor.Normalised per sample") +
-#  theme(axis.text.x=element_blank(),
-#        axis.ticks.x=element_blank())
-#
-## 3.1. Boxplot of Precursor.Normalised per sample - colored by Passage
-#report %>%
-#  dplyr::mutate(File.Name = forcats::fct_relevel(File.Name, unique(File.Name[order(Passage)]))) %>% 
-#  ggplot(aes(x = File.Name, y = log2(Precursor.Normalised), fill = Passage)) +
-#  geom_boxplot() +
-#  theme_light() +
-#  xlab("Sample") +
-#  ylab("Precursor.Normalised") +
-#  labs(title = "Precursor.Normalised per sample") +
-#  theme(axis.text.x=element_blank(),
-#        axis.ticks.x=element_blank())
-#
-## 3.1. Boxplot of Precursor.Normalised per sample - colored by Treatment
-#report %>%
-#  dplyr::mutate(File.Name = forcats::fct_relevel(File.Name, unique(File.Name[order(Treatment)]))) %>% 
-#  ggplot(aes(x = File.Name, y = log2(Precursor.Normalised), fill = Treatment)) +
-#  geom_boxplot() +
-#  theme_light() +
-#  xlab("Sample") +
-#  ylab("Precursor.Normalised") +
-#  labs(title = "Precursor.Normalised per sample") +
-#  theme(axis.text.x=element_blank(),
-#        axis.ticks.x=element_blank())
 ```
---> The Precursor.Normalised of all the samples are thankfully mostly alligned
+--> The Precursor.Normalised of all the samples are thankfully mostly aligned
 
 ## 8.2. Normalize
 At this point we go from long to wide format data and log2! Necessary for this step and the following ones
@@ -1077,54 +885,6 @@ gtsave(changes_log_gt, file = "/home/alvaro/MyStuff/Projects/ToleranceEvo_Wenxi/
 
 
 
-
---> I AM NOT FILTERING BASED ON NORMALIZATION FACTORS SO THIS SECTION IS NOT NECESSARY! BUT I WILL KEEP IT HERE IN CASE IT IS USEFUL FOR OTHER PROJECTS :)
-# 9. Normalization removes outlying samples, which affects the % of NAs, so we filter based on detection threshold/sample fraction again
-## 9.1. Perform filtering based on number of samples present per strain
-```{r}
-data_filtered_replicate_num_after_norm <- filter_samples_per_strain(report_norm,
-                                                                    min_samples_per_strain)
-```
-
-
-## 9.2. Update change log
-```{r}
-new_row <- get_new_row_for_log(9, 
-                               "Filtered strains with less than 2 replicates present (again)",
-                               step_name = "Replicate number 2.0",
-                               report_norm,
-                               data_filtered_replicate_num_after_norm)
-
-changes_log <- changes_log %>%
-  add_row(new_row)
-```
-
-
-## 9.3. Remove, for each strain, those precursors which are not present in at least 3/4 or 2/3 replicates
-```{r}
-data_filtered_prec_per_strain_after_norm <- remove_uncommon_precursors_per_strain(data_filtered_replicate_num_after_norm, 
-                                                                                  percentage_of_samples_per_precursor)
-
-# Save filtered dataset
-#fwrite(data_filtered_prec_per_strain, "data/filtered/data_filtered_prec_per_strain.tsv")
-```
-
-
-## 9.4. Update change log
-```{r}
-new_row <- get_new_row_for_log(10, 
-                               "From each strain, removed precursors which were not present in more than 65% of the replicates (again)",
-                               step_name = "Rare precs. per strain 2.0",
-                               data_filtered_replicate_num_after_norm,
-                               data_filtered_prec_per_strain_after_norm)
-
-changes_log <- changes_log %>%
-  add_row(new_row)
-```
-
-
-
-
 Try out LOESS fit to injection time - NICE CHECK, SHOWS IT'S NOT NECESSARY TO CORRECT FOR DRIFT
 ```{r}
 # First of all I need to collapse the Precursor.Normalised by sample, so I get the mean of it in each sample, and that is what I fit the model to
@@ -1147,16 +907,14 @@ ggplot(data = test, aes(x = Injection, y = Precursor.Normalised)) +
   theme_light() +
   labs(title = "Mean intensity per sample along injection order",
        subtitle = "With LOESS curve")
+ggsave("/home/alvaro/MyStuff/Projects/ToleranceEvo_Wenxi/Output/Plots/filtering/loess_fit_to_injection_order.png")
 ```
 
 
 
 
-
-
-
-# 10. Final QC and export of normalized data
-## 10.1. Create wide version of the data again
+# 9. Final QC and export of normalized data
+## 9.1. Create wide version of the data again
 ```{r}
 report_wide <- report_norm %>%
   dplyr::select(Sample.Name, Precursor.Normalised, Precursor.Id) %>%
@@ -1167,7 +925,7 @@ report_wide <- report_norm %>%
   as.matrix()
 ```
 
-## 10.2. QC plots
+## 9.2. QC plots
 ```{r}
 # 1.1. Get scatter plot for identified precursors per sample vs. injection order
 ggplot(data = report_norm, aes(x = Injection, y = Precursors_per_sample, col = Sample.Type)) +
@@ -1305,9 +1063,9 @@ report_norm %>%
         axis.ticks.x=element_blank())
 ```
 
-## 10.3. Protein summarization prior to imputation
+## 9.3. Protein summarization prior to imputation
 ```{r}
-protein_summarized_no_imputation <- diann_maxlfq(data_filtered_prec_per_strain_after_norm,
+protein_summarized_no_imputation <- diann_maxlfq(report_norm,
                                                  sample.header = "Sample.Name",
                                                  group.header = "Protein.Ids",
                                                  id.header = "Precursor.Id",
@@ -1320,11 +1078,21 @@ print(glue("Percentage of missing values at precursor level: {sum(is.na(report_w
 print(glue("Percentage of missing values at protein level: {sum(is.na(protein_summarized_no_imputation))/(ncol(protein_summarized_no_imputation)*nrow(protein_summarized_no_imputation))}"))
 ```
 
-## 10.4. Export data 
+## 9.4. Export data 
 ```{r}
-# normalized data as wide format to do imputation and confounder correction with Boris' script in local
+# Filtered, normalized, non-imputed, precursor level data as wide format - to do imputation on
 fwrite(report_wide, 
-       "/home/alvaro/MyStuff/Projects/ToleranceEvo_Wenxi/Data/Processed/report_wide_filtered_norm_log2.csv",
+       "/home/alvaro/MyStuff/Projects/ToleranceEvo_Wenxi/Data/Processed/filtered_normalized_log2_precursor_wide.csv",
+       row.names = T)
+
+# Filtered, normalized, non-imputed, precursor level data as long format
+fwrite(report_norm,
+       "/home/alvaro/MyStuff/Projects/ToleranceEvo_Wenxi/Data/Processed/filtered_normalized_log2_precursor_long.tsv",
+       row.names = T)
+
+# Filtered, normalized, non-imputed, protein level data, wide format (always for protein-level data)
+fwrite(protein_summarized_no_imputation_df,
+       "/home/alvaro/MyStuff/Projects/ToleranceEvo_Wenxi/Data/Processed/filtered_normalized_protein_wide.tsv",
        row.names = T)
 
 # Correspondence between Precursor.Id and Protein.Id for limpa protein summarization in local
@@ -1332,15 +1100,27 @@ precursor_protein_correspondence <- report_raw %>%
   dplyr::select(Precursor.Id, Protein.Group, Protein.Ids, Genes) %>%
   dplyr::distinct(Precursor.Id, .keep_all = T)
 fwrite(precursor_protein_correspondence,
-       "/home/alvaro/MyStuff/Projects/ToleranceEvo_Wenxi/Data/Processed/precursor_protein_correspondence.tsv")
+       "/home/alvaro/MyStuff/Projects/ToleranceEvo_Wenxi/Data/Processed/precursor_protein_correspondence.tsv",
+       row.names = T)
+```
 
-# Save also last version of the processed long-format report, so I don't need to run all the pre-processing in order to make plots
-fwrite(data_filtered_prec_per_strain_after_norm,
-       "/home/alvaro/MyStuff/Projects/ToleranceEvo_Wenxi/Data/Processed/report_long_fully_processed.tsv")
 
-# Save dataset at protein level without imputation
-fwrite(protein_summarized_no_imputation_df,
-       "/home/alvaro/MyStuff/Projects/ToleranceEvo_Wenxi/Data/Processed/protein_level_maxlfq_normalized.tsv")
+
+# 10. Imputation
+I do recommend using the non-imputed dataset, but in case that the imputed one is required for whatever reason, I am producing it here, using KNN transposed imputation. 
+```{r}
+# Produce the imputed wide dataframe at precursor level
+
+
+# Summarized the fully imputed dataframe to protein level
+
+
+# Save both of these datasets
+## Fully imputed, precursor level, wide
+
+
+## Fully imputed, protein level, wide
+
 ```
 
 
@@ -1366,7 +1146,7 @@ report_raw_matched <- report_raw %>%
   left_join(metadata, by = "File.Name")
 
 # Fully processed data
-data_fully_processed <- as.data.frame(fread("/home/alvaro/MyStuff/Projects/ToleranceEvo_Wenxi/Data/Processed/report_long_fully_processed.tsv"))
+data_fully_processed <- as.data.frame(fread("/home/alvaro/MyStuff/Projects/ToleranceEvo_Wenxi/Data/Processed/filtered_normalized_log2_precursor_long.tsv"))
 
 # Number of protein IDs at the beginning and end of pre-processing
 length(unique(report_raw$Protein.Ids))
@@ -1400,7 +1180,7 @@ ggplot(data = data_fully_processed, aes(x = Sample.Name, y = Precursor.Normalise
 ggsave("/home/alvaro/MyStuff/Projects/ToleranceEvo_Wenxi/Output/Plots/QC/processed/intensity_distribution_processed.png", dpi = 600)
 ```
 
-## 11.1.3. Precursor.Normalised boxplots along Injection time
+## 11.1.2. Precursor.Normalised boxplots along Injection time
 ```{r}
 ggplot(data = report_raw_matched, aes(x = Injection, y = log2(Precursor.Normalised), group = Injection))+
   geom_boxplot() +
@@ -1643,6 +1423,13 @@ ggplot(data = CV_data_long, aes(x = Group, y = CV, fill = Group)) +
 # Print the median CV across the QC samples - this is a reference of the quality of the whole dataset
 median(CV_data_long$CV[CV_data_long$Group == "QC"], na.rm = T)
 ```
+
+
+
+
+
+
+
 
 
 
